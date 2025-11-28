@@ -82,10 +82,11 @@ export async function PATCH(req: NextRequest) {
     // Bulk update
     if (Array.isArray(ids) && ids.length > 0 && status) {
       const { data, error } = await supabase
-        .from("orders")
-        .update({ status })
-        .in("id", ids)
-        .select();
+  .from("orders")
+  .update({ status } as any)   // 👈 TypeScript fix
+  .in("id", ids)
+  .select();
+
 
       if (error) {
         console.error("Supabase bulk PATCH orders error:", error);
