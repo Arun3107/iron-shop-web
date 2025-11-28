@@ -7,13 +7,6 @@ import {
   type CSSProperties,
 } from "react";
 
-const SOCIETIES = [
-  "PSR Aster",
-  "Sowparnika Chandrakantha",
-  "Tulasi Premier",
-  "Other (not listed)",
-];
-
 const PICKUP_SLOTS = [
   {
     id: "MORNING",
@@ -274,8 +267,7 @@ function BookingForm(props: { onBack: () => void }) {
 
   const [customerName, setCustomerName] = useState("");
   const [phone, setPhone] = useState("");
-  const [society, setSociety] = useState("PSR Aster");
-  const [otherSociety, setOtherSociety] = useState("");
+  const [society, setSociety] = useState("");
   const [block, setBlock] = useState("");
   const [flatNumber, setFlatNumber] = useState("");
   const [pickupDate, setPickupDate] = useState(earliestPickupDate);
@@ -294,6 +286,13 @@ function BookingForm(props: { onBack: () => void }) {
     hour: 0,
   });
 
+  // NEW: dynamic societies + loading state
+  const [societies, setSocieties] = useState<string[]>([]);
+  const [loadingSocieties, setLoadingSocieties] = useState(false);
+
+  // NEW: prevent double-submit
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   useEffect(() => {
     const now = new Date();
     setCurrentInfo({
@@ -301,6 +300,57 @@ function BookingForm(props: { onBack: () => void }) {
       hour: now.getHours(),
     });
   }, []);
+
+  // Load saved details from localStorage
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const saved = window.localStorage.getItem("ironingUserInfo");
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed.customerName) setCustomerName(parsed.customerName);
+        if (parsed.phone) setPhone(parsed.phone);
+        if (parsed.society) setSociety(parsed.society);
+        if (parsed.block) setBlock(parsed.block);
+        if (parsed.flatNumber) setFlatNumber(parsed.flatNumber);
+      } catch (e) {
+        console.warn("Failed to parse saved user info", e);
+      }
+    }
+  }, []);
+
+  // NEW: load societies from Supabase via /api/societies
+  useEffect(() => {
+    const loadSocieties = async () => {
+      try {
+        setLoadingSocieties(true);
+        const res = await fetch("/api/societies");
+        const data = await res.json();
+        if (res.ok && Array.isArray(data.societies)) {
+          setSocieties(data.societies as string[]);
+        }
+      } catch (err) {
+        console.error("Failed to load societies", err);
+      } finally {
+        setLoadingSocieties(false);
+      }
+    };
+
+    void loadSocieties();
+  }, []);
+
+  const saveUserInfo = () => {
+    if (typeof window === "undefined") return;
+    const payload = {
+      customerName,
+      phone,
+      society,
+      block,
+      flatNumber,
+    };
+    window.localStorage.setItem("ironingUserInfo", JSON.stringify(payload));
+  };
 
   const selectedSlot =
     PICKUP_SLOTS.find((s) => s.id === pickupSlotId) ?? PICKUP_SLOTS[0];
@@ -314,39 +364,6 @@ function BookingForm(props: { onBack: () => void }) {
       setPickupSlotId("EVENING");
     }
   }, [morningDisabled, pickupSlotId]);
-
-  // Load saved details from localStorage
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    const saved = window.localStorage.getItem("ironingUserInfo");
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (parsed.customerName) setCustomerName(parsed.customerName);
-        if (parsed.phone) setPhone(parsed.phone);
-        if (parsed.society) setSociety(parsed.society);
-        if (parsed.otherSociety) setOtherSociety(parsed.otherSociety || "");
-        if (parsed.block) setBlock(parsed.block);
-        if (parsed.flatNumber) setFlatNumber(parsed.flatNumber);
-      } catch (e) {
-        console.warn("Failed to parse saved user info", e);
-      }
-    }
-  }, []);
-
-  const saveUserInfo = () => {
-    if (typeof window === "undefined") return;
-    const payload = {
-      customerName,
-      phone,
-      society,
-      otherSociety,
-      block,
-      flatNumber,
-    };
-    window.localStorage.setItem("ironingUserInfo", JSON.stringify(payload));
-  };
 
   const handleLoadProfile = async () => {
     if (!phone.trim()) {
@@ -389,15 +406,16 @@ function BookingForm(props: { onBack: () => void }) {
     e.preventDefault();
     setMessage("");
 
+    if (isSubmitting) return; // avoid duplicate orders
+
     if (!customerName || !phone || !flatNumber || !pickupDate) {
       setMessage("Please fill name, mobile, flat number and pickup date.");
       return;
     }
 
-    const finalSociety =
-      society === "Other (not listed)" ? otherSociety.trim() : society;
+    const finalSociety = society.trim();
     if (!finalSociety) {
-      setMessage("Please select or enter your society / apartment name.");
+      setMessage("Please enter your society / apartment name.");
       return;
     }
 
@@ -416,6 +434,7 @@ function BookingForm(props: { onBack: () => void }) {
         ? `${block.trim()}, ${flatNumber.trim()}`
         : flatNumber.trim();
 
+    setIsSubmitting(true);
     try {
       const res = await fetch("/api/orders", {
         method: "POST",
@@ -445,6 +464,13 @@ function BookingForm(props: { onBack: () => void }) {
         return;
       }
 
+      // Fire-and-forget: save society into Supabase for future suggestions
+      void fetch("/api/societies", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: finalSociety }),
+      });
+
       saveUserInfo();
 
       const baseMsg = selfDrop
@@ -459,6 +485,8 @@ function BookingForm(props: { onBack: () => void }) {
     } catch (err) {
       console.error("Request error:", err);
       setMessage("Something went wrong. Please try again.");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -514,7 +542,7 @@ function BookingForm(props: { onBack: () => void }) {
             margin: 0,
           }}
         >
-          Book a Pickup
+          Book
         </h2>
       </div>
 
@@ -558,25 +586,40 @@ function BookingForm(props: { onBack: () => void }) {
 
         <div>
           <label style={labelStyle}>Society / Apartment</label>
-          <select
+          <input
+            type="text"
+            list="society-options"
+            placeholder="Example: PSR Aster"
             value={society}
             onChange={(e) => setSociety(e.target.value)}
             style={inputStyle}
-          >
-            {SOCIETIES.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
+          />
+          <datalist id="society-options">
+            {societies.map((name) => (
+              <option key={name} value={name} />
             ))}
-          </select>
-          {society === "Other (not listed)" && (
-            <input
-              type="text"
-              placeholder="Enter your society name"
-              value={otherSociety}
-              onChange={(e) => setOtherSociety(e.target.value)}
-              style={{ ...inputStyle, marginTop: 8 }}
-            />
+          </datalist>
+          {loadingSocieties && (
+            <div
+              style={{
+                marginTop: 4,
+                fontSize: 11,
+                color: "#6b7280",
+              }}
+            >
+              Loading popular societies…
+            </div>
+          )}
+          {!loadingSocieties && societies.length > 0 && (
+            <div
+              style={{
+                marginTop: 4,
+                fontSize: 11,
+                color: "#6b7280",
+              }}
+            >
+              Start typing and pick from suggestions, or enter a new name.
+            </div>
           )}
         </div>
 
@@ -877,6 +920,7 @@ function BookingForm(props: { onBack: () => void }) {
 
         <button
           type="submit"
+          disabled={isSubmitting}
           style={{
             marginTop: 4,
             width: "100%",
@@ -887,10 +931,11 @@ function BookingForm(props: { onBack: () => void }) {
             fontSize: 14,
             fontWeight: 600,
             border: "none",
-            cursor: "pointer",
+            cursor: isSubmitting ? "not-allowed" : "pointer",
+            opacity: isSubmitting ? 0.65 : 1,
           }}
         >
-          Book Pickup
+          {isSubmitting ? "Booking…" : "Book"}
         </button>
       </form>
 
