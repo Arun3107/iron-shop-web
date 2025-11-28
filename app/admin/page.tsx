@@ -312,7 +312,7 @@ export default function AdminPage() {
     handleStatusChange(id, "PICKED");
   }
 
-  const societies = Array.from(
+    const societies = Array.from(
     new Set(orders.map((o) => o.society_name))
   ).sort();
 
@@ -321,7 +321,7 @@ export default function AdminPage() {
       ? orders
       : orders.filter((o) => o.society_name === societyFilter);
 
-  // FIFO + Express first
+  // FIFO + Express first (for this date + society)
   const sortedOrders = [...filteredOrders].sort((a, b) => {
     if (a.express_delivery !== b.express_delivery) {
       return a.express_delivery ? -1 : 1; // express at top
@@ -331,14 +331,29 @@ export default function AdminPage() {
     return aTime - bTime; // oldest first
   });
 
-  const totalRevenue = sortedOrders.reduce(
+  // Pending = everything that is NOT DELIVERED
+  const pendingOrders = sortedOrders.filter(
+    (o) => o.status !== "DELIVERED"
+  );
+
+  // Numbers at the top (Orders / Revenue) match the current tab:
+  // - Orders tab  -> pending only
+  // - Pickup tab  -> all for that date/society
+  // - Dashboard   -> has its own totals
+  const ordersForStats =
+    activeTab === "ORDERS" ? pendingOrders : sortedOrders;
+
+  const totalRevenue = ordersForStats.reduce(
     (sum, o) => sum + (o.total_price || 0),
     0
   );
 
+  // For Pickup tab we still want NEW + doorstep, regardless of pending filter
   const pickupOrders = sortedOrders.filter(
     (o) => o.status === "NEW" && !o.self_drop
   );
+
+
 
   return (
     <main
@@ -486,9 +501,10 @@ export default function AdminPage() {
               }}
             >
               <div style={pillStyle}>
-                Orders:{" "}
-                <span style={{ fontWeight: 700 }}>{sortedOrders.length}</span>
-              </div>
+  Orders:{" "}
+  <span style={{ fontWeight: 700 }}>{ordersForStats.length}</span>
+</div>
+
               <div style={pillStyle}>
                 Revenue (this date):{" "}
                 <span style={{ fontWeight: 700 }}>₹{totalRevenue}</span>
@@ -537,7 +553,7 @@ export default function AdminPage() {
           <OrdersView
             isMobile={isMobile}
             loading={loading}
-            sortedOrders={sortedOrders}
+            sortedOrders={pendingOrders}
             savingBulk={savingBulk}
             savingMap={savingMap}
             onMarkAllNewAsPicked={markAllNewAsPicked}
@@ -735,7 +751,7 @@ function SummaryCard({
           >
             {summary.from} → {summary.to}
           </div>
-          <div
+                    <div
             style={{
               display: "flex",
               gap: 12,
@@ -745,13 +761,18 @@ function SummaryCard({
           >
             <div style={summaryPillStyle}>
               Orders:{" "}
-              <span style={{ fontWeight: 700 }}>{summary.totalOrders}</span>
+              <span style={{ fontWeight: 700 }}>
+                {summary.totalOrders}
+              </span>
             </div>
             <div style={summaryPillStyle}>
               Revenue:{" "}
-              <span style={{ fontWeight: 700 }}>₹{summary.totalRevenue}</span>
+              <span style={{ fontWeight: 700 }}>
+                ₹{summary.totalRevenue}
+              </span>
             </div>
           </div>
+
           <div
             style={{
               display: "grid",
