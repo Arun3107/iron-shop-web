@@ -29,6 +29,19 @@ const PRICE_ITEMS = [
 
 type View = "home" | "book" | "orders";
 
+/** Earliest pickup date:
+ *  - Before 10:00 local time → today
+ *  - 10:00 or later → tomorrow
+ */
+function getEarliestPickupDateISO() {
+  const now = new Date();
+  const earliest = new Date(now);
+  if (now.getHours() >= 10) {
+    earliest.setDate(earliest.getDate() + 1);
+  }
+  return earliest.toISOString().slice(0, 10); // YYYY-MM-DD
+}
+
 export default function Home() {
   const [view, setView] = useState<View>("home");
 
@@ -102,24 +115,34 @@ function HomeScreen(props: {
         />
         <h1
           style={{
-            fontSize: 24,
-            fontWeight: 800,
-            letterSpacing: 0.2,
-            marginBottom: 6,
+            fontSize: 26,
+            fontWeight: 700,
+            marginBottom: 4,
           }}
         >
-          Iron Shop – PSR Aster
+          Professional Ironing Service
         </h1>
+        <p
+          style={{
+            fontSize: 18,
+            fontWeight: 600,
+            marginBottom: 8,
+          }}
+        >
+          PSR Aster
+        </p>
+
         <p style={{ fontSize: 13, opacity: 0.9, marginBottom: 10 }}>
           Professional steam ironing for your daily wear, bedsheets, and party
           outfits – with free pickup & delivery on orders above ₹200.
         </p>
         <div style={{ fontSize: 12, opacity: 0.95, lineHeight: 1.5 }}>
-          <div>
-            📍{" "}
-            <strong>
-              PSR Aster, Chambenahally, Sarjapura Road, Bengaluru – 562125
-            </strong>
+          <div style={{ display: "flex", gap: 8, marginBottom: 2 }}>
+            <span>📍</span>
+            <div>
+              <div>PSR Aster, Chambenahally, Sarjapura Road,</div>
+              <div>Bengaluru – 562125</div>
+            </div>
           </div>
           <div>
             📞 Contact:{" "}
@@ -149,12 +172,14 @@ function HomeScreen(props: {
         <p style={{ marginBottom: 4 }}>
           ✅ Express delivery (within 4 hours): <strong>+₹25</strong>
         </p>
+        <p style={{ marginBottom: 4 }}>
+          ✅ Choose <strong>doorstep pickup & delivery</strong> or{" "}
+          <strong>self drop & pickup from shop</strong>.
+        </p>
         <p style={{ marginBottom: 0 }}>
-          ✅ You can choose{" "}
-          <strong>doorstep pickup & delivery</strong> or{" "}
-          <strong>self drop & pickup from shop</strong>. For doorstep, orders
-          below ₹200 have a <strong>₹15 delivery charge</strong> · orders
-          ₹200+ get <strong>free pickup & delivery</strong>.
+          ✅ For doorstep, orders below <strong>₹200</strong> have a{" "}
+          <strong>₹15 delivery charge</strong>; orders{" "}
+          <strong>₹200+</strong> get <strong>free pickup & delivery</strong>.
         </p>
       </div>
 
@@ -207,15 +232,18 @@ function HomeScreen(props: {
 /* ---------- BOOKING FORM ---------- */
 
 function BookingForm(props: { onBack: () => void }) {
+  const earliestPickupDate = getEarliestPickupDateISO();
+
   const [customerName, setCustomerName] = useState("");
   const [phone, setPhone] = useState("");
   const [society, setSociety] = useState("PSR Aster");
   const [otherSociety, setOtherSociety] = useState("");
+  const [block, setBlock] = useState("");
   const [flatNumber, setFlatNumber] = useState("");
-  const [pickupDate, setPickupDate] = useState("");
+  const [pickupDate, setPickupDate] = useState(earliestPickupDate);
   const [itemsText, setItemsText] = useState("");
   const [expressDelivery, setExpressDelivery] = useState(false);
-  const [selfDrop, setSelfDrop] = useState(false); // NEW
+  const [selfDrop, setSelfDrop] = useState(false);
   const [message, setMessage] = useState("");
 
   const [useEstimator, setUseEstimator] = useState(false);
@@ -234,17 +262,12 @@ function BookingForm(props: { onBack: () => void }) {
         if (parsed.phone) setPhone(parsed.phone);
         if (parsed.society) setSociety(parsed.society);
         if (parsed.otherSociety) setOtherSociety(parsed.otherSociety || "");
+        if (parsed.block) setBlock(parsed.block);
         if (parsed.flatNumber) setFlatNumber(parsed.flatNumber);
       } catch (e) {
         console.warn("Failed to parse saved user info", e);
       }
     }
-
-    const today = new Date();
-    const yyyy = today.getFullYear();
-    const mm = String(today.getMonth() + 1).padStart(2, "0");
-    const dd = String(today.getDate()).padStart(2, "0");
-    setPickupDate(`${yyyy}-${mm}-${dd}`);
   }, []);
 
   const saveUserInfo = () => {
@@ -254,6 +277,7 @@ function BookingForm(props: { onBack: () => void }) {
       phone,
       society,
       otherSociety,
+      block,
       flatNumber,
     };
     window.localStorage.setItem("ironingUserInfo", JSON.stringify(payload));
@@ -321,6 +345,12 @@ function BookingForm(props: { onBack: () => void }) {
       !selfDrop && itemsTotal > 0 && itemsTotal < 200 ? 15 : 0;
     const estimatedTotal = itemsTotal + expressAmount + deliveryCharge;
 
+    // Combine block + flat number for now (backend only has flat_number)
+    const combinedFlat =
+      block.trim() && flatNumber.trim()
+        ? `${block.trim()}, ${flatNumber.trim()}`
+        : flatNumber.trim();
+
     try {
       const res = await fetch("/api/orders", {
         method: "POST",
@@ -329,7 +359,7 @@ function BookingForm(props: { onBack: () => void }) {
           customer_name: customerName.trim(),
           phone: phone.trim(),
           society_name: finalSociety,
-          flat_number: flatNumber.trim(),
+          flat_number: combinedFlat,
           pickup_date: pickupDate,
           pickup_slot: PICKUP_SLOT,
           express_delivery: expressDelivery,
@@ -365,6 +395,7 @@ function BookingForm(props: { onBack: () => void }) {
   };
 
   const handleQtyChange = (id: string, raw: string) => {
+    // allow blank input, keep number in state
     const cleaned = raw.replace(/\D/g, "");
     const num = cleaned === "" ? 0 : parseInt(cleaned, 10);
     setQuantities((prev) => ({
@@ -481,6 +512,18 @@ function BookingForm(props: { onBack: () => void }) {
           )}
         </div>
 
+        {/* Block field */}
+        <div>
+          <label style={labelStyle}>Block (optional)</label>
+          <input
+            type="text"
+            value={block}
+            onChange={(e) => setBlock(e.target.value)}
+            placeholder="Example: A Block, Tower 1"
+            style={inputStyle}
+          />
+        </div>
+
         <div>
           <label style={labelStyle}>Flat / House Number</label>
           <input
@@ -504,6 +547,7 @@ function BookingForm(props: { onBack: () => void }) {
               type="date"
               value={pickupDate}
               onChange={(e) => setPickupDate(e.target.value)}
+              min={earliestPickupDate}
               style={inputStyle}
             />
           </div>
@@ -525,7 +569,7 @@ function BookingForm(props: { onBack: () => void }) {
           </div>
         </div>
 
-        {/* NEW: pickup method */}
+        {/* Pickup method */}
         <div>
           <label style={labelStyle}>Pickup / Drop method</label>
           <div
@@ -626,41 +670,45 @@ function BookingForm(props: { onBack: () => void }) {
                 color: "#111827",
               }}
             >
-              {PRICE_ITEMS.map((item) => (
-                <div
-                  key={item.id}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: 8,
-                  }}
-                >
-                  <div style={{ flex: 1 }}>
-                    <div>{item.label}</div>
-                    <div style={{ fontSize: 11, color: "#6b7280" }}>
-                      ₹{item.price} per piece
-                    </div>
-                  </div>
-                  <input
-                    type="number"
-                    min={0}
-                    value={quantities[item.id] ?? 0}
-                    onChange={(e) =>
-                      handleQtyChange(item.id, e.target.value)
-                    }
+              {PRICE_ITEMS.map((item) => {
+                const qty = quantities[item.id] || 0;
+                return (
+                  <div
+                    key={item.id}
                     style={{
-                      width: 70,
-                      borderRadius: 8,
-                      border: "1px solid #d1d5db",
-                      padding: "4px 8px",
-                      fontSize: 13,
-                      color: "#111827",
-                      backgroundColor: "white",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 8,
                     }}
-                  />
-                </div>
-              ))}
+                  >
+                    <div style={{ flex: 1 }}>
+                      <div>{item.label}</div>
+                      <div style={{ fontSize: 11, color: "#6b7280" }}>
+                        ₹{item.price} per piece
+                      </div>
+                    </div>
+                    <input
+                      type="number"
+                      min={0}
+                      inputMode="numeric"
+                      value={qty === 0 ? "" : qty}
+                      onChange={(e) =>
+                        handleQtyChange(item.id, e.target.value)
+                      }
+                      style={{
+                        width: 70,
+                        borderRadius: 8,
+                        border: "1px solid #d1d5db",
+                        padding: "4px 8px",
+                        fontSize: 13,
+                        color: "#111827",
+                        backgroundColor: "white",
+                      }}
+                    />
+                  </div>
+                );
+              })}
             </div>
 
             <div
@@ -1053,8 +1101,7 @@ function MyOrders(props: { onBack: () => void }) {
                 <div style={{ fontSize: 12, color: "#4b5563" }}>
                   {o.total_price != null ? (
                     <>
-                      Amount paid:{" "}
-                      <strong>₹{o.total_price}</strong>{" "}
+                      Amount paid: <strong>₹{o.total_price}</strong>{" "}
                       {o.express_delivery && (
                         <span style={{ color: "#f97316" }}>
                           (including express)
