@@ -62,34 +62,33 @@ export async function POST(request: Request) {
       );
     }
 
-    // 1) Insert order
-    const { data: order, error: orderError } = await supabase
-      .from("orders")
-      .insert([
-        {
-          customer_name,
-          phone,
-          society_name,
-          flat_number,
-          pickup_date,
-          pickup_slot,
-          express_delivery: !!express_delivery,
-          self_drop: !!self_drop,
-          notes: notes || null,
+   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+const { data: order, error: orderError } = await (supabase as any)
+  .from("orders")
+  .insert([
+    {
+      customer_name,
+      phone,
+      society_name,
+      flat_number,
+      pickup_date,
+      pickup_slot,
+      express_delivery: !!express_delivery,
+      self_drop: !!self_drop,
+      notes: notes || null,
+      items_estimated_total: items_estimated_total ?? null,
+      delivery_charge: delivery_charge ?? null,
+      express_charge: express_charge ?? null,
+      estimated_total: estimated_total ?? null,
+      status: "NEW",
+      total_price: null,
+    },
+  ])
+  .select()
+  .single();
 
-          // Estimator values from customer (optional)
-          items_estimated_total: items_estimated_total ?? null,
-          delivery_charge: delivery_charge ?? null,
-          express_charge: express_charge ?? null,
-          estimated_total: estimated_total ?? null,
 
-          // Admin fields
-          status: "NEW", // NEW / PICKED / DELIVERED
-          total_price: null, // you will set this in admin
-        },
-      ])
-      .select()
-      .single();
+
 
     if (orderError) {
       console.error("Supabase insert order error:", orderError);
@@ -100,19 +99,21 @@ export async function POST(request: Request) {
     }
 
     // 2) Upsert customer profile (by phone)
-    const { error: customerError } = await supabase
-      .from("customers")
-      .upsert(
-        [
-          {
-            customer_name,
-            phone,
-            society_name,
-            flat_number,
-          },
-        ],
-        { onConflict: "phone" }
-      );
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const { error: customerError } = await (supabase as any)
+  .from("customers")
+  .upsert(
+    [
+      {
+        customer_name,
+        phone,
+        society_name,
+        flat_number,
+      },
+    ],
+    { onConflict: "phone" }
+  );
+
 
     if (customerError) {
       // Not fatal for the customer – just log
