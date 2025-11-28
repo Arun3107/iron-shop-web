@@ -30,9 +30,10 @@ interface Order {
   worker_name?: string | null;
 }
 
-type AdminTab = "ORDERS" | "DASHBOARD";
+type AdminTab = "ORDERS" | "PICKUP" | "DASHBOARD";
 
 const WORKERS = ["Anil", "Sikandar"];
+const DISCOUNT_OPTIONS = [0, 5, 10, 20];
 
 interface Summary {
   from: string;
@@ -52,6 +53,7 @@ export default function AdminPage() {
   const [societyFilter, setSocietyFilter] = useState<string>("ALL");
   const [activeTab, setActiveTab] = useState<AdminTab>("ORDERS");
   const [savingMap, setSavingMap] = useState<Record<string, boolean>>({});
+  const [isMobile, setIsMobile] = useState(false);
 
   // Dashboard state
   const [weekSummary, setWeekSummary] = useState<Summary | null>(null);
@@ -65,6 +67,17 @@ export default function AdminPage() {
   useEffect(() => {
     const todayISO = new Date().toISOString().slice(0, 10);
     setDate(todayISO);
+  }, []);
+
+  // Detect mobile width
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const update = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
   }, []);
 
   // Load orders when date changes
@@ -181,27 +194,11 @@ export default function AdminPage() {
     void saveOrderPartial(id, { worker_name: value });
   }
 
-  function handleTotalChange(id: string, raw: string) {
-    const cleaned = raw.replace(/\D/g, "");
-    const num = cleaned ? parseInt(cleaned, 10) : NaN;
+  async function handleTotalUpdate(id: string, total: number | null) {
     setOrders((prev) =>
-      prev.map((o) =>
-        o.id === id
-          ? {
-              ...o,
-              total_price: Number.isNaN(num) ? null : num,
-            }
-          : o
-      )
+      prev.map((o) => (o.id === id ? { ...o, total_price: total } : o))
     );
-  }
-
-  async function handleTotalBlur(id: string) {
-    const order = orders.find((o) => o.id === id);
-    if (!order) return;
-    await saveOrderPartial(id, {
-      total_price: order.total_price ?? null,
-    });
+    await saveOrderPartial(id, { total_price: total });
   }
 
   async function markAllNewAsPicked() {
@@ -335,6 +332,10 @@ export default function AdminPage() {
     0
   );
 
+  const pickupOrders = sortedOrders.filter(
+    (o) => o.status === "NEW" && !o.self_drop
+  );
+
   return (
     <main
       style={{
@@ -367,9 +368,8 @@ export default function AdminPage() {
           Iron Shop – Admin
         </h1>
         <p style={{ fontSize: 12, color: "#9ca3af", marginBottom: 12 }}>
-          View all bookings, update status (NEW / PICKED / READY / DELIVERED),
-          assign worker, and track revenue – optimised for both mobile and
-          laptop.
+          View bookings, plan pickups, update status, and track revenue – fully
+          optimised for mobile use by your team.
         </p>
 
         {/* Tabs */}
@@ -401,6 +401,23 @@ export default function AdminPage() {
           </button>
           <button
             type="button"
+            onClick={() => setActiveTab("PICKUP")}
+            style={{
+              border: "none",
+              padding: "6px 12px",
+              borderRadius: 999,
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: "pointer",
+              backgroundColor:
+                activeTab === "PICKUP" ? "#111827" : "transparent",
+              color: activeTab === "PICKUP" ? "#e5e7eb" : "#9ca3af",
+            }}
+          >
+            Pickup
+          </button>
+          <button
+            type="button"
             onClick={() => setActiveTab("DASHBOARD")}
             style={{
               border: "none",
@@ -414,65 +431,67 @@ export default function AdminPage() {
               color: activeTab === "DASHBOARD" ? "#e5e7eb" : "#9ca3af",
             }}
           >
-            Dashboard (week / month / range)
+            Dashboard
           </button>
         </div>
 
-        {/* Filters + quick summary – shown on both tabs */}
-        <div
-          style={{
-            display: "flex",
-            flexWrap: "wrap",
-            gap: 10,
-            alignItems: "center",
-            marginBottom: 12,
-          }}
-        >
-          <div>
-            <label style={filterLabelStyle}>Pickup date</label>
-            <input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              style={filterInputStyle}
-            />
-          </div>
-
-          <div>
-            <label style={filterLabelStyle}>Society</label>
-            <select
-              value={societyFilter}
-              onChange={(e) => setSocietyFilter(e.target.value)}
-              style={filterInputStyle}
-            >
-              <option value="ALL">All societies</option>
-              {societies.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-          </div>
-
+        {/* Filters + quick summary – shown on all data tabs */}
+        {activeTab !== "DASHBOARD" && (
           <div
             style={{
-              marginLeft: "auto",
               display: "flex",
               flexWrap: "wrap",
-              gap: 8,
-              fontSize: 11,
+              gap: 10,
+              alignItems: "center",
+              marginBottom: 12,
             }}
           >
-            <div style={pillStyle}>
-              Orders:{" "}
-              <span style={{ fontWeight: 700 }}>{sortedOrders.length}</span>
+            <div>
+              <label style={filterLabelStyle}>Pickup date</label>
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                style={filterInputStyle}
+              />
             </div>
-            <div style={pillStyle}>
-              Revenue (this date):{" "}
-              <span style={{ fontWeight: 700 }}>₹{totalRevenue}</span>
+
+            <div>
+              <label style={filterLabelStyle}>Society</label>
+              <select
+                value={societyFilter}
+                onChange={(e) => setSocietyFilter(e.target.value)}
+                style={filterInputStyle}
+              >
+                <option value="ALL">All societies</option>
+                {societies.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div
+              style={{
+                marginLeft: "auto",
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 8,
+                fontSize: 11,
+              }}
+            >
+              <div style={pillStyle}>
+                Orders:{" "}
+                <span style={{ fontWeight: 700 }}>{sortedOrders.length}</span>
+              </div>
+              <div style={pillStyle}>
+                Revenue (this date):{" "}
+                <span style={{ fontWeight: 700 }}>₹{totalRevenue}</span>
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         {error && (
           <div
@@ -502,8 +521,15 @@ export default function AdminPage() {
             onRangeRefresh={handleRangeRefresh}
             onQuickRange={handleQuickRange}
           />
+        ) : activeTab === "PICKUP" ? (
+          <PickupView
+            isMobile={isMobile}
+            loading={loading}
+            pickupOrders={pickupOrders}
+          />
         ) : (
           <OrdersView
+            isMobile={isMobile}
             loading={loading}
             sortedOrders={sortedOrders}
             savingBulk={savingBulk}
@@ -511,8 +537,7 @@ export default function AdminPage() {
             onMarkAllNewAsPicked={markAllNewAsPicked}
             onStatusChange={handleStatusChange}
             onWorkerChange={handleWorkerChange}
-            onTotalChange={handleTotalChange}
-            onTotalBlur={handleTotalBlur}
+            onTotalUpdate={handleTotalUpdate}
           />
         )}
       </div>
@@ -788,9 +813,215 @@ function SummaryCard({
   );
 }
 
+/* ---------- PICKUP VIEW ---------- */
+
+function PickupView(props: {
+  isMobile: boolean;
+  loading: boolean;
+  pickupOrders: Order[];
+}) {
+  const { isMobile, loading, pickupOrders } = props;
+
+  if (loading) {
+    return (
+      <div style={{ fontSize: 13, color: "#9ca3af" }}>Loading pickups…</div>
+    );
+  }
+
+  if (pickupOrders.length === 0) {
+    return (
+      <div style={{ fontSize: 13, color: "#9ca3af" }}>
+        No pending pickups for this date (and society).
+      </div>
+    );
+  }
+
+  // On desktop we can still use a simple table
+  if (!isMobile) {
+    return (
+      <div
+        style={{
+          marginTop: 4,
+          borderRadius: 12,
+          border: "1px solid #1f2937",
+          overflow: "hidden",
+        }}
+      >
+        <div style={{ overflowX: "auto" }}>
+          <table
+            style={{
+              width: "100%",
+              minWidth: 640,
+              borderCollapse: "collapse",
+              fontSize: 12,
+            }}
+          >
+            <thead
+              style={{
+                background: "linear-gradient(to right, #020617, #111827)",
+                textAlign: "left",
+              }}
+            >
+              <tr>
+                <th style={thStyle}>Society / Flat</th>
+                <th style={thStyle}>Pickup slot</th>
+                <th style={thStyle}>Express</th>
+                <th style={thStyle}>Details</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pickupOrders.map((order, index) => (
+                <tr
+                  key={order.id}
+                  style={{
+                    backgroundColor:
+                      index % 2 === 0 ? "#020617" : "#030712",
+                  }}
+                >
+                  <td style={tdStyle}>
+                    <div>{order.society_name}</div>
+                    <div style={{ fontSize: 11, color: "#9ca3af" }}>
+                      Flat: {order.flat_number}
+                    </div>
+                  </td>
+                  <td style={tdStyle}>{order.pickup_slot}</td>
+                  <td style={tdStyle}>
+                    {order.express_delivery ? (
+                      <span style={{ fontSize: 11, color: "#f97316" }}>
+                        Express
+                      </span>
+                    ) : (
+                      "-"
+                    )}
+                  </td>
+                  <td style={tdStyle}>
+                    <div style={{ fontSize: 11 }}>
+                      {order.customer_name} – {order.phone}
+                    </div>
+                    {order.notes && (
+                      <div
+                        style={{
+                          marginTop: 2,
+                          fontSize: 11,
+                          color: "#e5e7eb",
+                        }}
+                      >
+                        Notes: {order.notes}
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
+
+  // Mobile: show simple cards with society + flat + tap to reveal details
+  return (
+    <div style={{ display: "grid", gap: 8 }}>
+      {pickupOrders.map((order) => (
+        <PickupCard key={order.id} order={order} />
+      ))}
+    </div>
+  );
+}
+
+function PickupCard({ order }: { order: Order }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div
+      style={{
+        borderRadius: 12,
+        border: "1px solid #111827",
+        padding: 10,
+        background:
+          "radial-gradient(circle at top left, #111827cc, #020617)",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          gap: 8,
+          alignItems: "center",
+        }}
+      >
+        <div>
+          <div
+            style={{
+              fontSize: 13,
+              fontWeight: 600,
+            }}
+          >
+            {order.society_name}
+          </div>
+          <div style={{ fontSize: 12, color: "#9ca3af" }}>
+            Flat: {order.flat_number}
+          </div>
+          <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>
+            {order.pickup_slot}
+            {order.express_delivery && (
+              <span style={{ color: "#f97316", marginLeft: 4 }}>
+                • Express
+              </span>
+            )}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => setOpen((x) => !x)}
+          style={{
+            borderRadius: 999,
+            border: "1px solid #374151",
+            padding: "4px 10px",
+            fontSize: 11,
+            fontWeight: 500,
+            backgroundColor: "#020617",
+            color: "#e5e7eb",
+            cursor: "pointer",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {open ? "Hide details" : "View details"}
+        </button>
+      </div>
+
+      {open && (
+        <div
+          style={{
+            marginTop: 8,
+            paddingTop: 6,
+            borderTop: "1px dashed #1f2937",
+            fontSize: 11,
+          }}
+        >
+          <div>
+            <span style={{ color: "#9ca3af" }}>Name:</span>{" "}
+            <span style={{ fontWeight: 600 }}>{order.customer_name}</span>
+          </div>
+          <div>
+            <span style={{ color: "#9ca3af" }}>Phone:</span>{" "}
+            <span>{order.phone}</span>
+          </div>
+          {order.notes && (
+            <div style={{ marginTop: 4, color: "#e5e7eb" }}>
+              Notes: {order.notes}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ---------- ORDERS VIEW ---------- */
 
 function OrdersView(props: {
+  isMobile: boolean;
   loading: boolean;
   sortedOrders: Order[];
   savingBulk: boolean;
@@ -798,10 +1029,10 @@ function OrdersView(props: {
   onMarkAllNewAsPicked: () => void;
   onStatusChange: (id: string, e: ChangeEvent<HTMLSelectElement>) => void;
   onWorkerChange: (id: string, e: ChangeEvent<HTMLSelectElement>) => void;
-  onTotalChange: (id: string, value: string) => void;
-  onTotalBlur: (id: string) => void;
+  onTotalUpdate: (id: string, total: number | null) => void;
 }) {
   const {
+    isMobile,
     loading,
     sortedOrders,
     savingBulk,
@@ -809,9 +1040,83 @@ function OrdersView(props: {
     onMarkAllNewAsPicked,
     onStatusChange,
     onWorkerChange,
-    onTotalChange,
-    onTotalBlur,
+    onTotalUpdate,
   } = props;
+
+  // Local billing state: base amount + discount %
+  const [billingState, setBillingState] = useState<
+    Record<string, { base: string; discount: number }>
+  >({});
+
+  const handleBaseChange = (id: string, raw: string) => {
+    const cleaned = raw.replace(/\D/g, "");
+    setBillingState((prev) => {
+      const existing = prev[id] || { base: "", discount: 0 };
+      return {
+        ...prev,
+        [id]: { ...existing, base: cleaned },
+      };
+    });
+  };
+
+  const handleDiscountChange = (id: string, discount: number, order: Order) => {
+    setBillingState((prev) => {
+      const existing = prev[id] || { base: "", discount: 0 };
+      return {
+        ...prev,
+        [id]: { ...existing, discount },
+      };
+    });
+
+    const total = computeFinalTotal(id, order, billingState, discount);
+    if (total !== null) {
+      void onTotalUpdate(id, total);
+    }
+  };
+
+  const handleBaseBlur = (id: string, order: Order) => {
+    const total = computeFinalTotal(id, order, billingState);
+    if (total !== null) {
+      void onTotalUpdate(id, total);
+    }
+  };
+
+  const computeFinalTotal = (
+    id: string,
+    order: Order,
+    state: Record<string, { base: string; discount: number }>,
+    overrideDiscount?: number
+  ): number | null => {
+    const entry = state[id] || { base: "", discount: 0 };
+    const baseStr = entry.base;
+    const discount = overrideDiscount ?? entry.discount ?? 0;
+
+    if (!baseStr) return null;
+    const baseNum = parseInt(baseStr, 10);
+    if (Number.isNaN(baseNum) || baseNum <= 0) return null;
+
+    const pickupCharge =
+      !order.self_drop && baseNum > 0 && baseNum < 200 ? 15 : 0;
+    const expressCharge = order.express_delivery ? 25 : 0;
+
+    const subtotal = baseNum + pickupCharge + expressCharge;
+    const final = Math.round(subtotal * (1 - discount / 100));
+    return final;
+  };
+
+  if (loading) {
+    return (
+      <div style={{ fontSize: 13, color: "#9ca3af" }}>Loading orders…</div>
+    );
+  }
+
+  if (sortedOrders.length === 0) {
+    return (
+      <div style={{ fontSize: 13, color: "#9ca3af" }}>
+        No orders for this date (and society) yet.
+      </div>
+    );
+  }
 
   return (
     <>
@@ -827,7 +1132,7 @@ function OrdersView(props: {
         <button
           type="button"
           onClick={() => void onMarkAllNewAsPicked()}
-          disabled={savingBulk || loading || sortedOrders.length === 0}
+          disabled={savingBulk || sortedOrders.length === 0}
           style={{
             borderRadius: 999,
             border: "none",
@@ -835,14 +1140,13 @@ function OrdersView(props: {
             fontSize: 11,
             fontWeight: 600,
             cursor:
-              savingBulk || loading || sortedOrders.length === 0
+              savingBulk || sortedOrders.length === 0
                 ? "not-allowed"
                 : "pointer",
             background:
               "linear-gradient(to right, #f97316, #ea580c, #7c2d12)",
             color: "#fffbeb",
-            opacity:
-              savingBulk || loading || sortedOrders.length === 0 ? 0.6 : 1,
+            opacity: savingBulk || sortedOrders.length === 0 ? 0.6 : 1,
           }}
         >
           {savingBulk ? "Marking NEW as PICKED…" : "Mark all NEW as PICKED"}
@@ -853,11 +1157,19 @@ function OrdersView(props: {
         </span>
       </div>
 
-      {loading ? (
-        <div style={{ fontSize: 13, color: "#9ca3af" }}>Loading orders…</div>
-      ) : sortedOrders.length === 0 ? (
-        <div style={{ fontSize: 13, color: "#9ca3af" }}>
-          No orders for this date (and society) yet.
+      {isMobile ? (
+        <div style={{ display: "grid", gap: 8 }}>
+          {sortedOrders.map((order) => (
+            <OrderCard
+              key={order.id}
+              order={order}
+              saving={savingMap[order.id] ?? false}
+              billingState={billingState}
+              onBaseChange={handleBaseChange}
+              onBaseBlur={handleBaseBlur}
+              onDiscountChange={handleDiscountChange}
+            />
+          ))}
         </div>
       ) : (
         <div
@@ -868,12 +1180,12 @@ function OrdersView(props: {
             overflow: "hidden",
           }}
         >
-          {/* Horizontal scroll for mobile */}
+          {/* Horizontal scroll for desktop */}
           <div style={{ overflowX: "auto" }}>
             <table
               style={{
                 width: "100%",
-                minWidth: 720,
+                minWidth: 900,
                 borderCollapse: "collapse",
                 fontSize: 12,
               }}
@@ -890,12 +1202,40 @@ function OrdersView(props: {
                   <th style={thStyle}>Slot</th>
                   <th style={thStyle}>Status</th>
                   <th style={thStyle}>Worker</th>
-                  <th style={thStyle}>Total price</th>
+                  <th style={thStyle}>Billing</th>
                 </tr>
               </thead>
               <tbody>
                 {sortedOrders.map((order, index) => {
                   const saving = savingMap[order.id] ?? false;
+                  const entry = billingState[order.id] || {
+                    base: "",
+                    discount: 0,
+                  };
+                  const baseStr = entry.base;
+                  const discount = entry.discount ?? 0;
+
+                  const baseNum =
+                    baseStr.trim() === "" ? 0 : parseInt(baseStr, 10);
+                  const pickupCharge =
+                    !order.self_drop && baseNum > 0 && baseNum < 200 ? 15 : 0;
+                  const expressCharge = order.express_delivery ? 25 : 0;
+                  const subtotal = baseNum + pickupCharge + expressCharge;
+                  const finalCalculated =
+                    baseStr.trim() === ""
+                      ? null
+                      : Math.round(subtotal * (1 - discount / 100));
+
+                  const effectiveTotal =
+                    finalCalculated !== null
+                      ? finalCalculated
+                      : order.total_price ?? null;
+
+                  const canWhatsApp =
+                    !!order.phone &&
+                    effectiveTotal !== null &&
+                    (order.status === "READY" || order.status === "DELIVERED");
+
                   return (
                     <tr
                       key={order.id}
@@ -1010,29 +1350,109 @@ function OrdersView(props: {
                         </select>
                       </td>
                       <td style={tdStyle}>
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          value={
-                            order.total_price != null
-                              ? String(order.total_price)
-                              : ""
-                          }
-                          onChange={(e) =>
-                            onTotalChange(order.id, e.target.value)
-                          }
-                          onBlur={() => void onTotalBlur(order.id)}
-                          placeholder="₹"
+                        <div
                           style={{
-                            width: "100%",
-                            borderRadius: 6,
-                            border: "1px solid #374151",
-                            backgroundColor: "#020617",
-                            color: "#e5e7eb",
+                            display: "grid",
+                            gap: 4,
                             fontSize: 11,
-                            padding: "4px 6px",
                           }}
-                        />
+                        >
+                          <div>
+                            <span>Base amount: </span>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              value={baseStr}
+                              onChange={(e) =>
+                                handleBaseChange(order.id, e.target.value)
+                              }
+                              onBlur={() =>
+                                handleBaseBlur(order.id, order)
+                              }
+                              placeholder="₹"
+                              style={{
+                                width: "100%",
+                                borderRadius: 6,
+                                border: "1px solid #374151",
+                                backgroundColor: "#020617",
+                                color: "#e5e7eb",
+                                fontSize: 11,
+                                padding: "4px 6px",
+                              }}
+                            />
+                          </div>
+                          <div>
+                            <span>Discount: </span>
+                            <select
+                              value={discount}
+                              onChange={(e) =>
+                                handleDiscountChange(
+                                  order.id,
+                                  Number(e.target.value),
+                                  order
+                                )
+                              }
+                              style={{
+                                marginTop: 2,
+                                width: "100%",
+                                borderRadius: 6,
+                                border: "1px solid #374151",
+                                backgroundColor: "#020617",
+                                color: "#e5e7eb",
+                                fontSize: 11,
+                                padding: "2px 6px",
+                              }}
+                            >
+                              {DISCOUNT_OPTIONS.map((d) => (
+                                <option key={d} value={d}>
+                                  {d === 0 ? "No discount" : `${d}%`}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div style={{ color: "#9ca3af" }}>
+                            <div>
+                              Pickup: ₹{pickupCharge} · Express: ₹
+                              {expressCharge}
+                            </div>
+                            <div>
+                              Final total:{" "}
+                              <span
+                                style={{
+                                  fontWeight: 700,
+                                  color: "#22c55e",
+                                }}
+                              >
+                                {effectiveTotal !== null
+                                  ? `₹${effectiveTotal}`
+                                  : "—"}
+                              </span>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            disabled={!canWhatsApp}
+                            onClick={() => {
+                              if (!effectiveTotal) return;
+                              openWhatsApp(order, effectiveTotal);
+                            }}
+                            style={{
+                              marginTop: 4,
+                              borderRadius: 999,
+                              border: "none",
+                              padding: "4px 8px",
+                              fontSize: 11,
+                              fontWeight: 600,
+                              cursor: canWhatsApp ? "pointer" : "not-allowed",
+                              background:
+                                "linear-gradient(to right, #22c55e, #16a34a)",
+                              color: "#022c22",
+                              opacity: canWhatsApp ? 1 : 0.4,
+                            }}
+                          >
+                            WhatsApp customer
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -1043,6 +1463,238 @@ function OrdersView(props: {
         </div>
       )}
     </>
+  );
+}
+
+/* ---------- MOBILE ORDER CARD ---------- */
+
+function OrderCard(props: {
+  order: Order;
+  saving: boolean;
+  billingState: Record<string, { base: string; discount: number }>;
+  onBaseChange: (id: string, raw: string) => void;
+  onBaseBlur: (id: string, order: Order) => void;
+  onDiscountChange: (id: string, discount: number, order: Order) => void;
+}) {
+  const {
+    order,
+    saving,
+    billingState,
+    onBaseChange,
+    onBaseBlur,
+    onDiscountChange,
+  } = props;
+
+  const entry = billingState[order.id] || { base: "", discount: 0 };
+  const baseStr = entry.base;
+  const discount = entry.discount ?? 0;
+
+  const baseNum = baseStr.trim() === "" ? 0 : parseInt(baseStr, 10);
+  const pickupCharge =
+    !order.self_drop && baseNum > 0 && baseNum < 200 ? 15 : 0;
+  const expressCharge = order.express_delivery ? 25 : 0;
+  const subtotal = baseNum + pickupCharge + expressCharge;
+  const finalCalculated =
+    baseStr.trim() === ""
+      ? null
+      : Math.round(subtotal * (1 - discount / 100));
+
+  const effectiveTotal =
+    finalCalculated !== null ? finalCalculated : order.total_price ?? null;
+
+  const canWhatsApp =
+    !!order.phone &&
+    effectiveTotal !== null &&
+    (order.status === "READY" || order.status === "DELIVERED");
+
+  return (
+    <div
+      style={{
+        borderRadius: 12,
+        border: "1px solid #111827",
+        padding: 10,
+        background:
+          "radial-gradient(circle at top left, #111827cc, #020617)",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          gap: 8,
+        }}
+      >
+        <div>
+          <div
+            style={{
+              fontSize: 14,
+              fontWeight: 600,
+            }}
+          >
+            {order.customer_name}
+          </div>
+          <div style={{ fontSize: 11, color: "#9ca3af" }}>
+            {order.society_name} • Flat: {order.flat_number}
+          </div>
+          <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>
+            {order.pickup_slot}
+            {order.express_delivery && (
+              <span style={{ color: "#f97316", marginLeft: 4 }}>
+                • Express
+              </span>
+            )}
+            {order.self_drop && (
+              <span style={{ color: "#22c55e", marginLeft: 4 }}>
+                • Self drop
+              </span>
+            )}
+          </div>
+          {order.notes && (
+            <div
+              style={{
+                fontSize: 11,
+                color: "#e5e7eb",
+                marginTop: 4,
+              }}
+            >
+              Notes: {order.notes}
+            </div>
+          )}
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <StatusBadge status={order.status} />
+          <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 4 }}>
+            {order.phone}
+          </div>
+          {saving && (
+            <div
+              style={{
+                marginTop: 2,
+                fontSize: 10,
+                color: "#9ca3af",
+              }}
+            >
+              Saving…
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div
+        style={{
+          marginTop: 8,
+          paddingTop: 6,
+          borderTop: "1px dashed #1f2937",
+          display: "grid",
+          gap: 6,
+          fontSize: 11,
+        }}
+      >
+        <div>
+          <span>Status: </span>
+          <span style={{ fontWeight: 600 }}>{order.status}</span>
+        </div>
+        <div>
+          <span>Worker: </span>
+          <span>{order.worker_name || "Unassigned"}</span>
+        </div>
+      </div>
+
+      <div
+        style={{
+          marginTop: 8,
+          paddingTop: 6,
+          borderTop: "1px dashed #1f2937",
+          display: "grid",
+          gap: 6,
+          fontSize: 11,
+        }}
+      >
+        <div>
+          <div style={{ marginBottom: 2 }}>Base amount</div>
+          <input
+            type="text"
+            inputMode="numeric"
+            value={baseStr}
+            onChange={(e) => onBaseChange(order.id, e.target.value)}
+            onBlur={() => onBaseBlur(order.id, order)}
+            placeholder="₹"
+            style={{
+              width: "100%",
+              borderRadius: 6,
+              border: "1px solid #374151",
+              backgroundColor: "#020617",
+              color: "#e5e7eb",
+              fontSize: 12,
+              padding: "4px 6px",
+            }}
+          />
+        </div>
+        <div>
+          <div style={{ marginBottom: 2 }}>Discount</div>
+          <select
+            value={discount}
+            onChange={(e) =>
+              onDiscountChange(order.id, Number(e.target.value), order)
+            }
+            style={{
+              width: "100%",
+              borderRadius: 6,
+              border: "1px solid #374151",
+              backgroundColor: "#020617",
+              color: "#e5e7eb",
+              fontSize: 12,
+              padding: "4px 6px",
+            }}
+          >
+            {DISCOUNT_OPTIONS.map((d) => (
+              <option key={d} value={d}>
+                {d === 0 ? "No discount" : `${d}%`}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div style={{ color: "#9ca3af" }}>
+          <div>
+            Pickup: ₹{pickupCharge} · Express: ₹{expressCharge}
+          </div>
+          <div>
+            Final total:{" "}
+            <span
+              style={{
+                fontWeight: 700,
+                color: "#22c55e",
+              }}
+            >
+              {effectiveTotal !== null ? `₹${effectiveTotal}` : "—"}
+            </span>
+          </div>
+        </div>
+        <button
+          type="button"
+          disabled={!canWhatsApp}
+          onClick={() => {
+            if (!effectiveTotal) return;
+            openWhatsApp(order, effectiveTotal);
+          }}
+          style={{
+            marginTop: 4,
+            width: "100%",
+            borderRadius: 999,
+            border: "none",
+            padding: "6px 10px",
+            fontSize: 12,
+            fontWeight: 600,
+            cursor: canWhatsApp ? "pointer" : "not-allowed",
+            background: "linear-gradient(to right, #22c55e, #16a34a)",
+            color: "#022c22",
+            opacity: canWhatsApp ? 1 : 0.4,
+          }}
+        >
+          WhatsApp customer
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -1081,6 +1733,37 @@ function StatusBadge({ status }: { status: OrderStatus }) {
       {status}
     </span>
   );
+}
+
+function normalisePhoneForWhatsApp(raw: string): string | null {
+  const digits = raw.replace(/\D/g, "");
+  if (!digits) return null;
+  if (digits.length === 10) {
+    // assume Indian mobile without country code
+    return `91${digits}`;
+  }
+  // if already starts with 91 and long enough, use as-is
+  if (digits.startsWith("91") && digits.length >= 12) {
+    return digits;
+  }
+  return digits;
+}
+
+function openWhatsApp(order: Order, total: number) {
+  if (typeof window === "undefined") return;
+  const phone = normalisePhoneForWhatsApp(order.phone);
+  if (!phone) return;
+
+  const isReady = order.status === "READY";
+  const line1 = isReady
+    ? `Your ironing order from ${order.society_name} (${order.flat_number}) is READY.`
+    : `Your ironing order from ${order.society_name} (${order.flat_number}) is DELIVERED.`;
+  const line2 = `Total amount: ₹${total}.`;
+  const line3 = "Thank you for choosing us 🙏";
+
+  const text = `Hi ${order.customer_name},\n${line1}\n${line2}\n${line3}`;
+  const url = `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
+  window.open(url, "_blank");
 }
 
 // calculate Monday–Sunday week around a date
