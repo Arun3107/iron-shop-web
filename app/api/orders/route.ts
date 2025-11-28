@@ -1,0 +1,133 @@
+import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseServiceRole = process.env.SUPABASE_SERVICE_ROLE;
+
+let supabase: ReturnType<typeof createClient> | null = null;
+
+if (supabaseUrl && supabaseServiceRole) {
+  supabase = createClient(supabaseUrl, supabaseServiceRole);
+} else {
+  console.error(
+    "Supabase env vars missing. SUPABASE_URL or SUPABASE_SERVICE_ROLE not set."
+  );
+}
+
+/**
+ * Save a new order + update customer profile
+ */
+export async function POST(request: Request) {
+  try {
+    if (!supabase) {
+      return NextResponse.json(
+        {
+          error:
+            "Server is not configured correctly (Supabase env vars missing).",
+        },
+        { status: 500 }
+      );
+    }
+
+    const body = await request.json();
+
+    const {
+      customer_name,
+      phone,
+      society_name,
+      flat_number,
+      pickup_date,
+      pickup_slot,
+      express_delivery,
+      notes,
+      items_estimated_total,
+      delivery_charge,
+      express_charge,
+      estimated_total,
+      self_drop,
+    } = body;
+
+    // Basic validation
+    if (
+      !customer_name ||
+      !phone ||
+      !society_name ||
+      !flat_number ||
+      !pickup_date ||
+      !pickup_slot
+    ) {
+      return NextResponse.json(
+        { error: "Missing required fields" },
+        { status: 400 }
+      );
+    }
+
+    // 1) Insert order
+    const { data: order, error: orderError } = await supabase
+      .from("orders")
+      .insert([
+        {
+          customer_name,
+          phone,
+          society_name,
+          flat_number,
+          pickup_date,
+          pickup_slot,
+          express_delivery: !!express_delivery,
+          self_drop: !!self_drop,
+          notes: notes || null,
+
+          // Estimator values from customer (optional)
+          items_estimated_total: items_estimated_total ?? null,
+          delivery_charge: delivery_charge ?? null,
+          express_charge: express_charge ?? null,
+          estimated_total: estimated_total ?? null,
+
+          // Admin fields
+          status: "NEW", // NEW / PICKED / DELIVERED
+          total_price: null, // you will set this in admin
+        },
+      ])
+      .select()
+      .single();
+
+    if (orderError) {
+      console.error("Supabase insert order error:", orderError);
+      return NextResponse.json(
+        { error: orderError.message || "Failed to save order" },
+        { status: 500 }
+      );
+    }
+
+    // 2) Upsert customer profile (by phone)
+    const { error: customerError } = await supabase
+      .from("customers")
+      .upsert(
+        [
+          {
+            customer_name,
+            phone,
+            society_name,
+            flat_number,
+          },
+        ],
+        { onConflict: "phone" }
+      );
+
+    if (customerError) {
+      // Not fatal for the customer – just log
+      console.error("Supabase upsert customer error:", customerError);
+    }
+
+    return NextResponse.json(
+      { success: true, order },
+      { status: 200 }
+    );
+  } catch (err) {
+    console.error("Orders API error:", err);
+    return NextResponse.json(
+      { error: "Unexpected error while saving order" },
+      { status: 500 }
+    );
+  }
+}
