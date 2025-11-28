@@ -16,6 +16,27 @@ if (supabaseUrl && supabaseServiceRole) {
 
 type OrderStatus = "NEW" | "PICKED" | "READY" | "DELIVERED";
 
+interface OrderRow {
+  id: string;
+  created_at: string;
+  customer_name: string;
+  phone: string;
+  society_name: string;
+  flat_number: string;
+  pickup_date: string;
+  pickup_slot: string;
+  express_delivery: boolean;
+  self_drop: boolean;
+  notes: string | null;
+  items_estimated_total: number | null;
+  delivery_charge: number | null;
+  express_charge: number | null;
+  estimated_total: number | null;
+  status: OrderStatus;
+  total_price: number | null;
+  worker_name?: string | null;
+}
+
 interface Summary {
   from: string;
   to: string;
@@ -25,41 +46,47 @@ interface Summary {
   revenueByWorker: Record<string, number>;
 }
 
-function ensureSupabase() {
-  if (!supabase) {
-    throw new Error("Supabase client is not configured on the server");
-  }
-  return supabase;
-}
-
 // GET /api/admin/orders
-// - ?date=YYYY-MM-DD                → list orders for that pickup date
-// - ?summary=1&from=YYYY-MM-DD&to=YYYY-MM-DD → summary for date range
-export async function GET(req: Request) {
+// - ?date=YYYY-MM-DD          -> list orders for that pickup_date
+// - ?summary=1&from=..&to=..  -> summary across a date range
+export async function GET(request: Request) {
+  if (!supabase) {
+    return NextResponse.json(
+      { error: "Supabase client not configured" },
+      { status: 500 }
+    );
+  }
+
   try {
-    const client = ensureSupabase();
-    const url = new URL(req.url);
-    const search = url.searchParams;
+    const { searchParams } = new URL(request.url);
+    const summaryFlag = searchParams.get("summary");
+    const from = searchParams.get("from");
+    const to = searchParams.get("to");
 
-    const summaryFlag = search.get("summary");
-    const from = search.get("from");
-    const to = search.get("to");
+    // Summary mode (dashboard)
+    if (summaryFlag && (from || to)) {
+      if (!from || !to) {
+        return NextResponse.json(
+          { error: "Both 'from' and 'to' must be provided for summary" },
+          { status: 400 }
+        );
+      }
 
-    // Summary mode for dashboard (week / month / custom range)
-    if (summaryFlag && from && to) {
-      const { data, error } = await client
+      const { data, error } = await supabase
         .from("orders")
-        .select("id,status,total_price,worker_name")
+        .select("id, pickup_date, status, total_price, worker_name")
         .gte("pickup_date", from)
         .lte("pickup_date", to);
 
       if (error) {
-        console.error("Supabase summary error:", error);
+        console.error("Supabase summary query error:", error);
         return NextResponse.json(
           { error: "Failed to load summary" },
           { status: 500 }
         );
       }
+
+      const rows = (data || []) as OrderRow[];
 
       const statusCounts: Record<OrderStatus, number> = {
         NEW: 0,
@@ -67,28 +94,33 @@ export async function GET(req: Request) {
         READY: 0,
         DELIVERED: 0,
       };
+
       const revenueByWorker: Record<string, number> = {};
+
+      let totalOrders = 0;
       let totalRevenue = 0;
 
-      for (const row of data ?? []) {
-        const st = row.status as OrderStatus | null;
-        if (st && statusCounts[st] !== undefined) {
+      for (const row of rows) {
+        totalOrders += 1;
+
+        const price = row.total_price ?? 0;
+        totalRevenue += price;
+
+        const st = row.status;
+        if (statusCounts[st] !== undefined) {
           statusCounts[st] += 1;
         }
-        if (typeof row.total_price === "number") {
-          totalRevenue += row.total_price;
-        }
-        const worker = row.worker_name as string | null;
-        if (worker && typeof row.total_price === "number") {
-          revenueByWorker[worker] =
-            (revenueByWorker[worker] || 0) + row.total_price;
+
+        const worker = row.worker_name;
+        if (worker) {
+          revenueByWorker[worker] = (revenueByWorker[worker] || 0) + price;
         }
       }
 
       const summary: Summary = {
         from,
         to,
-        totalOrders: data?.length ?? 0,
+        totalOrders,
         totalRevenue,
         statusCounts,
         revenueByWorker,
@@ -97,30 +129,30 @@ export async function GET(req: Request) {
       return NextResponse.json({ summary });
     }
 
-    // Default: list orders for a specific pickup date (used in Orders tab)
-    const date = search.get("date");
+    // Non-summary: list orders for a single date
+    const date = searchParams.get("date");
     if (!date) {
       return NextResponse.json(
-        { error: "Missing date parameter" },
+        { error: "Missing 'date' query parameter" },
         { status: 400 }
       );
     }
 
-    const { data, error } = await client
+    const { data, error } = await supabase
       .from("orders")
       .select("*")
       .eq("pickup_date", date)
       .order("created_at", { ascending: true });
 
     if (error) {
-      console.error("Supabase orders fetch error:", error);
+      console.error("Supabase orders query error:", error);
       return NextResponse.json(
         { error: "Failed to load orders" },
         { status: 500 }
       );
     }
 
-    return NextResponse.json({ orders: data ?? [] });
+    return NextResponse.json({ orders: data || [] });
   } catch (err) {
     console.error("Admin GET /api/admin/orders error:", err);
     return NextResponse.json(
@@ -130,23 +162,102 @@ export async function GET(req: Request) {
   }
 }
 
-// PATCH /api/admin/orders
-// 1) Single update (auto-save):
-//    { id, status?, total_price?, worker_name? }
-//
-// 2) Bulk status update (e.g. "mark all NEW as PICKED"):
-//    { ids: [...], status }
-export async function PATCH(req: Request) {
-  try {
-    const client = ensureSupabase();
-    const body = await req.json();
+// POST /api/admin/orders
+// Used by admin to create walk-in orders from the Orders tab
+export async function POST(request: Request) {
+  if (!supabase) {
+    return NextResponse.json(
+      { error: "Supabase client not configured" },
+      { status: 500 }
+    );
+  }
 
-    // Bulk update
-    if (Array.isArray(body.ids) && typeof body.status === "string") {
-      const ids: string[] = body.ids;
+  try {
+    const body = await request.json();
+
+    const {
+      customer_name,
+      phone,
+      society_name,
+      flat_number,
+      pickup_date,
+      pickup_slot,
+      express_delivery,
+      self_drop,
+      status,
+      notes,
+    } = body ?? {};
+
+    if (!society_name || !pickup_date) {
+      return NextResponse.json(
+        { error: "society_name and pickup_date are required" },
+        { status: 400 }
+      );
+    }
+
+    const insertPayload = {
+      customer_name: customer_name || "Walk-in customer",
+      phone: phone || "",
+      society_name,
+      flat_number: flat_number || "Walk-in",
+      pickup_date,
+      pickup_slot: pickup_slot || "Self drop",
+      express_delivery: !!express_delivery,
+      self_drop: self_drop ?? true,
+      notes: notes ?? null,
+      items_estimated_total: null,
+      delivery_charge: null,
+      express_charge: null,
+      estimated_total: null,
+      status: (status as OrderStatus) ?? "PICKED",
+      total_price: null,
+      worker_name: null,
+    };
+
+    const { data, error } = await supabase
+      .from("orders")
+      .insert(insertPayload)
+      .select("*")
+      .single();
+
+    if (error) {
+      console.error("Supabase insert order error:", error);
+      return NextResponse.json(
+        { error: "Failed to create order" },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ order: data });
+  } catch (err) {
+    console.error("Admin POST /api/admin/orders error:", err);
+    return NextResponse.json(
+      { error: "Unexpected error while creating order" },
+      { status: 500 }
+    );
+  }
+}
+
+// PATCH /api/admin/orders
+// - single order: { id, status?, worker_name?, total_price? }
+// - bulk status: { ids: string[], status: OrderStatus }
+export async function PATCH(request: Request) {
+  if (!supabase) {
+    return NextResponse.json(
+      { error: "Supabase client not configured" },
+      { status: 500 }
+    );
+  }
+
+  try {
+    const body = await request.json();
+
+    // Bulk update: { ids: string[], status: "PICKED" | other statuses }
+    if (Array.isArray(body?.ids) && body.ids.length > 0 && body.status) {
+      const ids = body.ids as string[];
       const status = body.status as OrderStatus;
 
-      const { data, error } = await client
+      const { data, error } = await supabase
         .from("orders")
         .update({ status })
         .in("id", ids)
@@ -160,48 +271,44 @@ export async function PATCH(req: Request) {
         );
       }
 
-      return NextResponse.json({ orders: data ?? [] });
+      return NextResponse.json({ orders: data || [] });
     }
 
-    // Single partial update
-    if (typeof body.id === "string") {
-      const id: string = body.id;
-      const patch: Record<string, unknown> = {};
+    // Single order partial update
+    if (body?.id) {
+      const patch: Partial<
+        Pick<OrderRow, "status" | "worker_name" | "total_price">
+      > = {};
 
       if (typeof body.status === "string") {
         patch.status = body.status as OrderStatus;
       }
-      if ("total_price" in body) {
-        patch.total_price =
-          typeof body.total_price === "number"
-            ? body.total_price
-            : body.total_price === null
-            ? null
-            : null;
+      if (typeof body.worker_name === "string" || body.worker_name === null) {
+        patch.worker_name = body.worker_name;
       }
-      if ("worker_name" in body) {
-        patch.worker_name =
-          typeof body.worker_name === "string" && body.worker_name.length > 0
-            ? body.worker_name
-            : null;
+      if (
+        typeof body.total_price === "number" ||
+        body.total_price === null
+      ) {
+        patch.total_price = body.total_price;
       }
 
       if (Object.keys(patch).length === 0) {
         return NextResponse.json(
-          { error: "No fields to update" },
+          { error: "No valid fields to update" },
           { status: 400 }
         );
       }
 
-      const { data, error } = await client
+      const { data, error } = await supabase
         .from("orders")
         .update(patch)
-        .eq("id", id)
+        .eq("id", body.id)
         .select("*")
         .single();
 
       if (error) {
-        console.error("Supabase single update error:", error);
+        console.error("Supabase update error:", error);
         return NextResponse.json(
           { error: "Failed to update order" },
           { status: 500 }

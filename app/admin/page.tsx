@@ -1909,7 +1909,7 @@ function openWhatsApp(order: Order, total: number) {
     ? `Your ironing order from ${order.society_name} (${order.flat_number}) is READY.`
     : `Your ironing order from ${order.society_name} (${order.flat_number}) is DELIVERED.`;
   const line2 = `Total amount: ₹${total}.`;
-  const line3 = "Thank you for choosing us 🙏";
+  const line3 = "Thank you for choosing us";
 
   const text = `Hi ${order.customer_name},\n${line1}\n${line2}\n${line3}`;
   const url = `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
