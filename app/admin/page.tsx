@@ -178,20 +178,18 @@ export default function AdminPage() {
     }
   }
 
-  function handleStatusChange(id: string, e: ChangeEvent<HTMLSelectElement>) {
-    const value = e.target.value as OrderStatus;
+  function handleStatusChange(id: string, status: OrderStatus) {
     setOrders((prev) =>
-      prev.map((o) => (o.id === id ? { ...o, status: value } : o))
+      prev.map((o) => (o.id === id ? { ...o, status } : o))
     );
-    void saveOrderPartial(id, { status: value });
+    void saveOrderPartial(id, { status });
   }
 
-  function handleWorkerChange(id: string, e: ChangeEvent<HTMLSelectElement>) {
-    const value = e.target.value || null;
+  function handleWorkerChange(id: string, worker: string | null) {
     setOrders((prev) =>
-      prev.map((o) => (o.id === id ? { ...o, worker_name: value } : o))
+      prev.map((o) => (o.id === id ? { ...o, worker_name: worker } : o))
     );
-    void saveOrderPartial(id, { worker_name: value });
+    void saveOrderPartial(id, { worker_name: worker });
   }
 
   async function handleTotalUpdate(id: string, total: number | null) {
@@ -291,14 +289,13 @@ export default function AdminPage() {
     setSummaryLoading(false);
   }
 
-  // Not a hook – just a helper for quick week/month range selection
+  // Quick week/month range selection for custom card
   function handleQuickRange(type: "week" | "month") {
     if (!date) return;
     const base = type === "week" ? getWeekRange(date) : getMonthRange(date);
     setRangeFrom(base.from);
     setRangeTo(base.to);
 
-    // If we already have week/month summary, reuse it immediately
     if (type === "week" && weekSummary) {
       setRangeSummary(weekSummary);
     } else if (type === "month" && monthSummary) {
@@ -306,6 +303,13 @@ export default function AdminPage() {
     } else {
       void handleRangeRefresh();
     }
+  }
+
+  async function handlePickupConfirm(id: string) {
+    // Called from Pickup tab button
+    const match = orders.find((o) => o.id === id);
+    if (!match || match.status !== "NEW") return;
+    handleStatusChange(id, "PICKED");
   }
 
   const societies = Array.from(
@@ -435,7 +439,7 @@ export default function AdminPage() {
           </button>
         </div>
 
-        {/* Filters + quick summary – shown on all data tabs */}
+        {/* Filters + quick summary – shown on Orders & Pickup */}
         {activeTab !== "DASHBOARD" && (
           <div
             style={{
@@ -526,6 +530,8 @@ export default function AdminPage() {
             isMobile={isMobile}
             loading={loading}
             pickupOrders={pickupOrders}
+            savingMap={savingMap}
+            onPickupConfirm={handlePickupConfirm}
           />
         ) : (
           <OrdersView
@@ -819,8 +825,11 @@ function PickupView(props: {
   isMobile: boolean;
   loading: boolean;
   pickupOrders: Order[];
+  savingMap: Record<string, boolean>;
+  onPickupConfirm: (id: string) => void;
 }) {
-  const { isMobile, loading, pickupOrders } = props;
+  const { isMobile, loading, pickupOrders, savingMap, onPickupConfirm } =
+    props;
 
   if (loading) {
     return (
@@ -836,7 +845,7 @@ function PickupView(props: {
     );
   }
 
-  // On desktop we can still use a simple table
+  // Desktop table
   if (!isMobile) {
     return (
       <div
@@ -867,51 +876,76 @@ function PickupView(props: {
                 <th style={thStyle}>Pickup slot</th>
                 <th style={thStyle}>Express</th>
                 <th style={thStyle}>Details</th>
+                <th style={thStyle}>Action</th>
               </tr>
             </thead>
             <tbody>
-              {pickupOrders.map((order, index) => (
-                <tr
-                  key={order.id}
-                  style={{
-                    backgroundColor:
-                      index % 2 === 0 ? "#020617" : "#030712",
-                  }}
-                >
-                  <td style={tdStyle}>
-                    <div>{order.society_name}</div>
-                    <div style={{ fontSize: 11, color: "#9ca3af" }}>
-                      Flat: {order.flat_number}
-                    </div>
-                  </td>
-                  <td style={tdStyle}>{order.pickup_slot}</td>
-                  <td style={tdStyle}>
-                    {order.express_delivery ? (
-                      <span style={{ fontSize: 11, color: "#f97316" }}>
-                        Express
-                      </span>
-                    ) : (
-                      "-"
-                    )}
-                  </td>
-                  <td style={tdStyle}>
-                    <div style={{ fontSize: 11 }}>
-                      {order.customer_name} – {order.phone}
-                    </div>
-                    {order.notes && (
-                      <div
+              {pickupOrders.map((order, index) => {
+                const saving = savingMap[order.id] ?? false;
+                return (
+                  <tr
+                    key={order.id}
+                    style={{
+                      backgroundColor:
+                        index % 2 === 0 ? "#020617" : "#030712",
+                    }}
+                  >
+                    <td style={tdStyle}>
+                      <div>{order.society_name}</div>
+                      <div style={{ fontSize: 11, color: "#9ca3af" }}>
+                        Flat: {order.flat_number}
+                      </div>
+                    </td>
+                    <td style={tdStyle}>{order.pickup_slot}</td>
+                    <td style={tdStyle}>
+                      {order.express_delivery ? (
+                        <span style={{ fontSize: 11, color: "#f97316" }}>
+                          Express
+                        </span>
+                      ) : (
+                        "-"
+                      )}
+                    </td>
+                    <td style={tdStyle}>
+                      <div style={{ fontSize: 11 }}>
+                        {order.customer_name} – {order.phone}
+                      </div>
+                      {order.notes && (
+                        <div
+                          style={{
+                            marginTop: 2,
+                            fontSize: 11,
+                            color: "#e5e7eb",
+                          }}
+                        >
+                          Notes: {order.notes}
+                        </div>
+                      )}
+                    </td>
+                    <td style={tdStyle}>
+                      <button
+                        type="button"
+                        disabled={saving}
+                        onClick={() => onPickupConfirm(order.id)}
                         style={{
-                          marginTop: 2,
+                          borderRadius: 999,
+                          border: "none",
+                          padding: "4px 8px",
                           fontSize: 11,
-                          color: "#e5e7eb",
+                          fontWeight: 600,
+                          cursor: saving ? "not-allowed" : "pointer",
+                          background:
+                            "linear-gradient(to right, #f97316, #ea580c)",
+                          color: "#fffbeb",
+                          opacity: saving ? 0.6 : 1,
                         }}
                       >
-                        Notes: {order.notes}
-                      </div>
-                    )}
-                  </td>
-                </tr>
-              ))}
+                        {saving ? "Updating…" : "Confirm pickup"}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -919,17 +953,27 @@ function PickupView(props: {
     );
   }
 
-  // Mobile: show simple cards with society + flat + tap to reveal details
+  // Mobile cards
   return (
     <div style={{ display: "grid", gap: 8 }}>
       {pickupOrders.map((order) => (
-        <PickupCard key={order.id} order={order} />
+        <PickupCard
+          key={order.id}
+          order={order}
+          saving={savingMap[order.id] ?? false}
+          onPickupConfirm={onPickupConfirm}
+        />
       ))}
     </div>
   );
 }
 
-function PickupCard({ order }: { order: Order }) {
+function PickupCard(props: {
+  order: Order;
+  saving: boolean;
+  onPickupConfirm: (id: string) => void;
+}) {
+  const { order, saving, onPickupConfirm } = props;
   const [open, setOpen] = useState(false);
 
   return (
@@ -1014,6 +1058,27 @@ function PickupCard({ order }: { order: Order }) {
           )}
         </div>
       )}
+
+      <button
+        type="button"
+        disabled={saving}
+        onClick={() => onPickupConfirm(order.id)}
+        style={{
+          marginTop: 10,
+          width: "100%",
+          borderRadius: 999,
+          border: "none",
+          padding: "6px 10px",
+          fontSize: 12,
+          fontWeight: 600,
+          cursor: saving ? "not-allowed" : "pointer",
+          background: "linear-gradient(to right, #f97316, #ea580c)",
+          color: "#fffbeb",
+          opacity: saving ? 0.6 : 1,
+        }}
+      >
+        {saving ? "Updating…" : "Confirm pickup"}
+      </button>
     </div>
   );
 }
@@ -1027,8 +1092,8 @@ function OrdersView(props: {
   savingBulk: boolean;
   savingMap: Record<string, boolean>;
   onMarkAllNewAsPicked: () => void;
-  onStatusChange: (id: string, e: ChangeEvent<HTMLSelectElement>) => void;
-  onWorkerChange: (id: string, e: ChangeEvent<HTMLSelectElement>) => void;
+  onStatusChange: (id: string, status: OrderStatus) => void;
+  onWorkerChange: (id: string, worker: string | null) => void;
   onTotalUpdate: (id: string, total: number | null) => void;
 }) {
   const {
@@ -1059,7 +1124,11 @@ function OrdersView(props: {
     });
   };
 
-  const handleDiscountChange = (id: string, discount: number, order: Order) => {
+  const handleDiscountChange = (
+    id: string,
+    discount: number,
+    order: Order
+  ) => {
     setBillingState((prev) => {
       const existing = prev[id] || { base: "", discount: 0 };
       return {
@@ -1168,6 +1237,8 @@ function OrdersView(props: {
               onBaseChange={handleBaseChange}
               onBaseBlur={handleBaseBlur}
               onDiscountChange={handleDiscountChange}
+              onStatusChange={onStatusChange}
+              onWorkerChange={onWorkerChange}
             />
           ))}
         </div>
@@ -1180,7 +1251,6 @@ function OrdersView(props: {
             overflow: "hidden",
           }}
         >
-          {/* Horizontal scroll for desktop */}
           <div style={{ overflowX: "auto" }}>
             <table
               style={{
@@ -1218,7 +1288,9 @@ function OrdersView(props: {
                   const baseNum =
                     baseStr.trim() === "" ? 0 : parseInt(baseStr, 10);
                   const pickupCharge =
-                    !order.self_drop && baseNum > 0 && baseNum < 200 ? 15 : 0;
+                    !order.self_drop && baseNum > 0 && baseNum < 200
+                      ? 15
+                      : 0;
                   const expressCharge = order.express_delivery ? 25 : 0;
                   const subtotal = baseNum + pickupCharge + expressCharge;
                   const finalCalculated =
@@ -1298,7 +1370,12 @@ function OrdersView(props: {
                         <StatusBadge status={order.status} />
                         <select
                           value={order.status}
-                          onChange={(e) => onStatusChange(order.id, e)}
+                          onChange={(e: ChangeEvent<HTMLSelectElement>) =>
+                            onStatusChange(
+                              order.id,
+                              e.target.value as OrderStatus
+                            )
+                          }
                           style={{
                             marginTop: 4,
                             fontSize: 11,
@@ -1330,7 +1407,12 @@ function OrdersView(props: {
                       <td style={tdStyle}>
                         <select
                           value={order.worker_name || ""}
-                          onChange={(e) => onWorkerChange(order.id, e)}
+                          onChange={(e: ChangeEvent<HTMLSelectElement>) =>
+                            onWorkerChange(
+                              order.id,
+                              e.target.value || null
+                            )
+                          }
                           style={{
                             fontSize: 11,
                             borderRadius: 6,
@@ -1475,6 +1557,8 @@ function OrderCard(props: {
   onBaseChange: (id: string, raw: string) => void;
   onBaseBlur: (id: string, order: Order) => void;
   onDiscountChange: (id: string, discount: number, order: Order) => void;
+  onStatusChange: (id: string, status: OrderStatus) => void;
+  onWorkerChange: (id: string, worker: string | null) => void;
 }) {
   const {
     order,
@@ -1483,6 +1567,8 @@ function OrderCard(props: {
     onBaseChange,
     onBaseBlur,
     onDiscountChange,
+    onStatusChange,
+    onWorkerChange,
   } = props;
 
   const entry = billingState[order.id] || { base: "", discount: 0 };
@@ -1517,6 +1603,7 @@ function OrderCard(props: {
           "radial-gradient(circle at top left, #111827cc, #020617)",
       }}
     >
+      {/* Top row: customer & basic info */}
       <div
         style={{
           display: "flex",
@@ -1580,6 +1667,7 @@ function OrderCard(props: {
         </div>
       </div>
 
+      {/* Status + worker controls */}
       <div
         style={{
           marginTop: 8,
@@ -1591,15 +1679,56 @@ function OrderCard(props: {
         }}
       >
         <div>
-          <span>Status: </span>
-          <span style={{ fontWeight: 600 }}>{order.status}</span>
+          <div style={{ marginBottom: 2 }}>Status</div>
+          <select
+            value={order.status}
+            onChange={(e: ChangeEvent<HTMLSelectElement>) =>
+              onStatusChange(order.id, e.target.value as OrderStatus)
+            }
+            style={{
+              width: "100%",
+              borderRadius: 6,
+              border: "1px solid #374151",
+              backgroundColor: "#020617",
+              color: "#e5e7eb",
+              fontSize: 12,
+              padding: "4px 6px",
+            }}
+          >
+            <option value="NEW">NEW</option>
+            <option value="PICKED">PICKED</option>
+            <option value="READY">READY</option>
+            <option value="DELIVERED">DELIVERED</option>
+          </select>
         </div>
         <div>
-          <span>Worker: </span>
-          <span>{order.worker_name || "Unassigned"}</span>
+          <div style={{ marginBottom: 2 }}>Worker</div>
+          <select
+            value={order.worker_name || ""}
+            onChange={(e: ChangeEvent<HTMLSelectElement>) =>
+              onWorkerChange(order.id, e.target.value || null)
+            }
+            style={{
+              width: "100%",
+              borderRadius: 6,
+              border: "1px solid #374151",
+              backgroundColor: "#020617",
+              color: "#e5e7eb",
+              fontSize: 12,
+              padding: "4px 6px",
+            }}
+          >
+            <option value="">Unassigned</option>
+            {WORKERS.map((w) => (
+              <option key={w} value={w}>
+                {w}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 
+      {/* Billing block */}
       <div
         style={{
           marginTop: 8,
