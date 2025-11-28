@@ -14,7 +14,18 @@ const SOCIETIES = [
   "Other (not listed)",
 ];
 
-const PICKUP_SLOT = "9:00 AM – 11:00 AM";
+const PICKUP_SLOTS = [
+  {
+    id: "MORNING",
+    label: "Morning",
+    timeRange: "9:00 AM – 11:00 AM",
+  },
+  {
+    id: "EVENING",
+    label: "Evening",
+    timeRange: "5:00 PM – 7:00 PM",
+  },
+];
 
 const PRICE_ITEMS = [
   { id: "basic", label: "Shirt / Trousers / T-Shirt / Jeans", price: 10 },
@@ -29,16 +40,19 @@ const PRICE_ITEMS = [
 
 type View = "home" | "book" | "orders";
 
-/** Earliest pickup date:
- *  - Before 10:00 local time → today
- *  - 10:00 or later → tomorrow
+/**
+ * Earliest pickup date:
+ *  - Same-day booking allowed until 5 PM
+ *  - After 5 PM → earliest available date is tomorrow
  */
 function getEarliestPickupDateISO() {
   const now = new Date();
   const earliest = new Date(now);
-  if (now.getHours() >= 10) {
+
+  if (now.getHours() >= 17) {
     earliest.setDate(earliest.getDate() + 1);
   }
+
   return earliest.toISOString().slice(0, 10); // YYYY-MM-DD
 }
 
@@ -50,8 +64,9 @@ export default function Home() {
       style={{
         minHeight: "100vh",
         display: "flex",
-        justifyContent: "center",
-        padding: "24px 16px",
+        flexDirection: "column",
+        alignItems: "center",
+        padding: "24px 16px 16px",
         background:
           "linear-gradient(135deg, #fef3c7 0%, #e5e7eb 35%, #f9fafb 100%)",
         fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
@@ -78,6 +93,27 @@ export default function Home() {
         {view === "book" && <BookingForm onBack={() => setView("home")} />}
 
         {view === "orders" && <MyOrders onBack={() => setView("home")} />}
+      </div>
+
+      {/* Add-to-home-screen tip (visible under the card on mobile) */}
+      <div
+        style={{
+          width: "100%",
+          maxWidth: 520,
+          marginTop: 10,
+          fontSize: 11,
+          color: "#4b5563",
+          textAlign: "center",
+        }}
+      >
+        <strong>Tip:</strong> To use this quickly every day, add it to your{" "}
+        <strong>Home Screen</strong>:
+        <br />
+        On <strong>Android (Chrome)</strong>: menu ⋮ →{" "}
+        <strong>Add to Home screen</strong>.
+        <br />
+        On <strong>iPhone (Safari)</strong>: share icon →{" "}
+        <strong>Add to Home Screen</strong>.
       </div>
     </main>
   );
@@ -141,7 +177,7 @@ function HomeScreen(props: {
             <span>📍</span>
             <div>
               <div>PSR Aster, Chambenahally, Sarjapura Road,</div>
-              <div>Bengaluru – 562125</div>
+              <div style={{ marginLeft: 0 }}>Bengaluru – 562125</div>
             </div>
           </div>
           <div>
@@ -167,7 +203,9 @@ function HomeScreen(props: {
         }}
       >
         <p style={{ marginBottom: 4 }}>
-          ✅ Same-day pickup slot: <strong>9:00 AM – 11:00 AM</strong>
+          ✅ Same-day pickup slots:{" "}
+          <strong>Morning (9:00 AM – 11:00 AM)</strong> or{" "}
+          <strong>Evening (5:00 PM – 7:00 PM)</strong>
         </p>
         <p style={{ marginBottom: 4 }}>
           ✅ Express delivery (within 4 hours): <strong>+₹25</strong>
@@ -241,6 +279,7 @@ function BookingForm(props: { onBack: () => void }) {
   const [block, setBlock] = useState("");
   const [flatNumber, setFlatNumber] = useState("");
   const [pickupDate, setPickupDate] = useState(earliestPickupDate);
+  const [pickupSlotId, setPickupSlotId] = useState<string>("MORNING");
   const [itemsText, setItemsText] = useState("");
   const [expressDelivery, setExpressDelivery] = useState(false);
   const [selfDrop, setSelfDrop] = useState(false);
@@ -249,6 +288,32 @@ function BookingForm(props: { onBack: () => void }) {
   const [useEstimator, setUseEstimator] = useState(false);
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [loadingProfile, setLoadingProfile] = useState(false);
+
+  const [currentInfo, setCurrentInfo] = useState({
+    todayISO: "",
+    hour: 0,
+  });
+
+  useEffect(() => {
+    const now = new Date();
+    setCurrentInfo({
+      todayISO: now.toISOString().slice(0, 10),
+      hour: now.getHours(),
+    });
+  }, []);
+
+  const selectedSlot =
+    PICKUP_SLOTS.find((s) => s.id === pickupSlotId) ?? PICKUP_SLOTS[0];
+
+  const isToday = pickupDate === currentInfo.todayISO;
+  const morningDisabled = isToday && currentInfo.hour >= 10;
+
+  // If morning becomes disabled while it's selected, switch to evening
+  useEffect(() => {
+    if (morningDisabled && pickupSlotId === "MORNING") {
+      setPickupSlotId("EVENING");
+    }
+  }, [morningDisabled, pickupSlotId]);
 
   // Load saved details from localStorage
   useEffect(() => {
@@ -361,7 +426,7 @@ function BookingForm(props: { onBack: () => void }) {
           society_name: finalSociety,
           flat_number: combinedFlat,
           pickup_date: pickupDate,
-          pickup_slot: PICKUP_SLOT,
+          pickup_slot: selectedSlot.timeRange,
           express_delivery: expressDelivery,
           self_drop: selfDrop,
           notes: itemsText.trim() || null,
@@ -381,9 +446,12 @@ function BookingForm(props: { onBack: () => void }) {
       }
 
       saveUserInfo();
-      setMessage(
-        `Thank you! Your pickup is booked for ${pickupDate} between ${PICKUP_SLOT}.`
-      );
+
+      const baseMsg = selfDrop
+        ? `Thank you! Your drop is booked for ${pickupDate} in the ${selectedSlot.label.toLowerCase()} slot (${selectedSlot.timeRange}). Please drop and collect your clothes from the shop.`
+        : `Thank you! Your pickup is booked for ${pickupDate} in the ${selectedSlot.label.toLowerCase()} slot (${selectedSlot.timeRange}).`;
+
+      setMessage(baseMsg);
       setItemsText("");
       setExpressDelivery(false);
       setUseEstimator(false);
@@ -555,16 +623,58 @@ function BookingForm(props: { onBack: () => void }) {
             <label style={labelStyle}>Pickup Time</label>
             <div
               style={{
-                marginTop: 10,
+                marginTop: 6,
+                display: "grid",
+                gap: 4,
                 fontSize: 13,
-                fontWeight: 600,
                 color: "#111827",
               }}
             >
-              {PICKUP_SLOT}
+              {PICKUP_SLOTS.map((slot) => {
+                const isMorning = slot.id === "MORNING";
+                const disabled = isMorning && morningDisabled;
+
+                return (
+                  <label
+                    key={slot.id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      opacity: disabled ? 0.4 : 1,
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name="pickupSlot"
+                      value={slot.id}
+                      checked={pickupSlotId === slot.id}
+                      onChange={() => setPickupSlotId(slot.id)}
+                      disabled={disabled}
+                    />
+                    <span>
+                      <strong>{slot.label}</strong>{" "}
+                      <span style={{ color: "#6b7280" }}>
+                        {slot.timeRange}
+                      </span>
+                      {disabled && (
+                        <span
+                          style={{
+                            marginLeft: 4,
+                            fontSize: 11,
+                            color: "#9ca3af",
+                          }}
+                        >
+                          (closed for today)
+                        </span>
+                      )}
+                    </span>
+                  </label>
+                );
+              })}
             </div>
-            <div style={{ fontSize: 11, color: "#6b7280" }}>
-              (Fixed slot every day)
+            <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>
+              (Choose morning or evening slot)
             </div>
           </div>
         </div>
@@ -1131,7 +1241,7 @@ function MyOrders(props: { onBack: () => void }) {
   );
 }
 
-/* ---------- STYLES ---------- */
+/* ---------- SHARED INPUT STYLES ---------- */
 
 const labelStyle: CSSProperties = {
   display: "block",
