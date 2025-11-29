@@ -2103,11 +2103,11 @@ function openWhatsApp(order: Order, total: number, discountPercent: number) {
   let statusLine: string;
   if (isReady) {
     if (order.self_drop) {
-      // Customer dropped at shop
+      // Customer dropped clothes at shop
       statusLine =
         "Your ironing order is READY for pickup at the shop.";
     } else {
-      // We picked from customer
+      // We picked up from customer
       statusLine =
         "Your ironing order is READY. We will deliver it to your flat shortly.";
     }
@@ -2123,7 +2123,15 @@ function openWhatsApp(order: Order, total: number, discountPercent: number) {
       ? `Discount applied: ${discountPercent}%.\n`
       : "";
 
-  const paymentLine = `Total amount: ₹${total}.\nYou can pay via UPI to shukla354@okicici.`;
+  // Build UPI deep link (works with GPay, PhonePe, Paytm, BHIM, etc)
+  const upiLink = `upi://pay?pa=shukla354@okicici&pn=${encodeURIComponent(
+    "Iron Shop"
+  )}&am=${encodeURIComponent(String(total))}&cu=INR&tn=${encodeURIComponent(
+    `Iron order – ${order.society_name} ${order.flat_number}`
+  )}`;
+
+  const paymentLine = `Total amount: ₹${total}.\nYou can pay via UPI to shukla354@okicici.\nPay easily using any UPI app (GPay, PhonePe, Paytm, BHIM etc.):\n${upiLink}`;
+
   const thanksLine = "Thank you for choosing us!";
 
   const text = `Hi ${order.customer_name || ""},\n${statusLine}\n${discountLine}${paymentLine}\n\nFlat: ${order.flat_number}, ${order.society_name}\n${thanksLine}`;
@@ -2131,6 +2139,7 @@ function openWhatsApp(order: Order, total: number, discountPercent: number) {
   const url = `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
   window.open(url, "_blank");
 }
+
 
 // calculate Monday–Sunday week around a date
 function getWeekRange(dateStr: string): { from: string; to: string } {
