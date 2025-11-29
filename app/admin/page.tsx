@@ -337,17 +337,18 @@ export default function AdminPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          customer_name: newCustomerName || "Walk-in customer",
-          phone: newPhone || "",
-          society_name: newSociety,
-          flat_number: "Walk-in",
-          pickup_date: date,
-          pickup_slot: "Self drop",
-          express_delivery: newExpress,
-          self_drop: true,
-          status: "PICKED",
-          notes: null,
-        }),
+  customer_name: "Walk-in customer",
+  phone: newPhone || "",
+  society_name: newSociety,
+  flat_number: newCustomerName || "Walk-in",
+  pickup_date: date,
+  pickup_slot: "Self drop",
+  express_delivery: newExpress,
+  self_drop: true,
+  status: "PICKED",
+  notes: null,
+}),
+
       });
 
       const data = await res.json();
@@ -610,15 +611,16 @@ export default function AdminPage() {
               </div>
             </div>
             <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
-                gap: 8,
-                fontSize: 12,
-              }}
-            >
+  style={{
+    display: "grid",
+    gridTemplateColumns: "1fr", // single column – better on mobile
+    gap: 8,
+    fontSize: 12,
+  }}
+>
+
               <div>
-                <label style={filterLabelStyle}>Customer name (optional)</label>
+                <label style={filterLabelStyle}>Flat number</label>
                 <input
                   type="text"
                   value={newCustomerName}
