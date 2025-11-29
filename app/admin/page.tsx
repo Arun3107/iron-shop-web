@@ -28,6 +28,8 @@ interface Order {
   status: OrderStatus;
   total_price: number | null;
   worker_name?: string | null;
+  base_amount?: number | null;
+  items_json?: Record<string, number> | null;
 }
 
 type AdminTab = "ORDERS" | "PICKUP" | "DASHBOARD";
@@ -184,6 +186,8 @@ export default function AdminPage() {
       status?: OrderStatus;
       worker_name?: string | null;
       total_price?: number | null;
+      base_amount?: number | null;
+      items_json?: Record<string, number> | null;
     }
   ) {
     if (!patch || Object.keys(patch).length === 0) return;
@@ -209,9 +213,7 @@ export default function AdminPage() {
       }
 
       const updated: Order = data.order;
-      setOrders((prev) =>
-        prev.map((o) => (o.id === updated.id ? updated : o))
-      );
+      setOrders((prev) => prev.map((o) => (o.id === updated.id ? updated : o)));
     } catch (err) {
       console.error("Update order request error:", err);
       setError("Unexpected error while updating order");
@@ -234,11 +236,38 @@ export default function AdminPage() {
     void saveOrderPartial(id, { worker_name: worker });
   }
 
-  async function handleTotalUpdate(id: string, total: number | null) {
+  async function handleTotalUpdate(
+    id: string,
+    total: number | null,
+    baseAmount: number | null,
+    itemsCounts: Record<string, number> | null
+  ) {
+    // Always update local state, even when values are null
     setOrders((prev) =>
-      prev.map((o) => (o.id === id ? { ...o, total_price: total } : o))
+      prev.map((o) =>
+        o.id === id
+          ? {
+              ...o,
+              total_price: total,
+              base_amount: baseAmount,
+              items_json: itemsCounts,
+            }
+          : o
+      )
     );
-    await saveOrderPartial(id, { total_price: total });
+
+    // Always send the fields (null means "clear" in Supabase)
+    const patch: {
+      total_price?: number | null;
+      base_amount?: number | null;
+      items_json?: Record<string, number> | null;
+    } = {
+      total_price: total,
+      base_amount: baseAmount,
+      items_json: itemsCounts,
+    };
+
+    await saveOrderPartial(id, patch);
   }
 
   async function markAllNewAsPicked() {
@@ -407,9 +436,7 @@ export default function AdminPage() {
     }
   }
 
-  const societies = Array.from(
-    new Set(orders.map((o) => o.society_name))
-  ).sort();
+  const societies = Array.from(new Set(orders.map((o) => o.society_name))).sort();
 
   const filteredOrders =
     societyFilter === "ALL"
@@ -427,9 +454,7 @@ export default function AdminPage() {
   });
 
   // Pending = everything that is NOT DELIVERED
-  const pendingOrders = sortedOrders.filter(
-    (o) => o.status !== "DELIVERED"
-  );
+  const pendingOrders = sortedOrders.filter((o) => o.status !== "DELIVERED");
 
   // Numbers at the top (Orders / Revenue) match the current tab:
   // - Orders tab  -> pending only
@@ -595,7 +620,9 @@ export default function AdminPage() {
             >
               <div style={pillStyle}>
                 Orders:{" "}
-                <span style={{ fontWeight: 700 }}>{ordersForStats.length}</span>
+                <span style={{ fontWeight: 700 }}>
+                  {ordersForStats.length}
+                </span>
               </div>
 
               <div style={pillStyle}>
@@ -1332,6 +1359,9 @@ function PickupCard(props: {
 
 /* ---------- ORDERS VIEW ---------- */
 
+type BillingState = Record<string, { base: string; discount: number }>;
+type ItemState = Record<string, Record<string, string>>;
+
 function OrdersView(props: {
   isMobile: boolean;
   loading: boolean;
@@ -1341,7 +1371,12 @@ function OrdersView(props: {
   onMarkAllNewAsPicked: () => void;
   onStatusChange: (id: string, status: OrderStatus) => void;
   onWorkerChange: (id: string, worker: string | null) => void;
-  onTotalUpdate: (id: string, total: number | null) => void;
+  onTotalUpdate: (
+    id: string,
+    total: number | null,
+    baseAmount: number | null,
+    itemsCounts: Record<string, number> | null
+  ) => void;
 }) {
   const {
     isMobile,
@@ -1355,20 +1390,49 @@ function OrdersView(props: {
     onTotalUpdate,
   } = props;
 
-  // Local billing state: base amount + discount %
-  const [billingState, setBillingState] = useState<
-    Record<string, { base: string; discount: number }>
-  >({});
+  const [billingState, setBillingState] = useState<BillingState>({});
+  const [itemState, setItemState] = useState<ItemState>({});
 
-  // Item quantities per order
-  const [itemState, setItemState] = useState<
-    Record<string, Record<string, string>>
-  >({});
+  // Seed local state from DB (base_amount + items_json) to make it persistent
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setBillingState((prev) => {
+      const next: BillingState = { ...prev };
+      for (const o of sortedOrders) {
+        if (!next[o.id]) {
+          next[o.id] = {
+            base:
+              typeof o.base_amount === "number" && o.base_amount > 0
+                ? String(o.base_amount)
+                : "",
+            discount: 0,
+          };
+        }
+      }
+      return next;
+    });
 
-  const getItemTotal = (
-    id: string,
-    state: Record<string, Record<string, string>>
-  ): number => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setItemState((prev) => {
+      const next: ItemState = { ...prev };
+      for (const o of sortedOrders) {
+        if (o.items_json && !next[o.id]) {
+          const entries: Record<string, string> = {};
+          for (const [key, val] of Object.entries(o.items_json)) {
+            if (typeof val === "number" && val > 0) {
+              entries[key] = String(val);
+            }
+          }
+          if (Object.keys(entries).length > 0) {
+            next[o.id] = entries;
+          }
+        }
+      }
+      return next;
+    });
+  }, [sortedOrders]);
+
+  const getItemTotal = (id: string, state: ItemState): number => {
     const items = state[id];
     if (!items) return 0;
     let sum = 0;
@@ -1384,6 +1448,147 @@ function OrdersView(props: {
     return sum;
   };
 
+  const buildItemsCounts = (
+    id: string,
+    state: ItemState
+  ): Record<string, number> | null => {
+    const src = state[id];
+    if (!src) return null;
+    const out: Record<string, number> = {};
+    for (const [key, val] of Object.entries(src)) {
+      if (!val) continue;
+      const qty = parseInt(val, 10);
+      if (!qty || qty <= 0) continue;
+      out[key] = qty;
+    }
+    return Object.keys(out).length ? out : null;
+  };
+
+  const computeTotals = (
+    id: string,
+    order: Order,
+    overrideBase?: string,
+    overrideDiscount?: number,
+    overrideItemsState?: ItemState
+  ): {
+    baseAmount: number | null;
+    finalTotal: number | null;
+    itemsCounts: Record<string, number> | null;
+  } => {
+    const billing = billingState[id] || { base: "", discount: 0 };
+    const baseStr = overrideBase !== undefined ? overrideBase : billing.base;
+    const discountPercent =
+      overrideDiscount !== undefined ? overrideDiscount : billing.discount;
+
+    const items = overrideItemsState ?? itemState;
+    const itemTotal = getItemTotal(id, items);
+    const itemsCounts = buildItemsCounts(id, items);
+
+    let baseAmount = 0;
+
+    if (itemTotal > 0) {
+      baseAmount = itemTotal;
+    } else {
+      const parsed = parseInt(baseStr || "", 10);
+      if (parsed > 0) {
+        baseAmount = parsed;
+      }
+    }
+
+    if (!baseAmount || baseAmount <= 0) {
+      return {
+        baseAmount: null,
+        finalTotal: null,
+        itemsCounts,
+      };
+    }
+
+    let total = baseAmount;
+
+    // Apply discount only on base amount
+    if (discountPercent && discountPercent > 0) {
+      const discounted = baseAmount - (baseAmount * discountPercent) / 100;
+      total = Math.round(discounted);
+    }
+
+    return {
+      baseAmount,
+      finalTotal: total,
+      itemsCounts,
+    };
+  };
+
+  const handleBaseChange = (id: string, value: string) => {
+    setBillingState((prev) => ({
+      ...prev,
+      [id]: {
+        base: value,
+        discount: prev[id]?.discount ?? 0,
+      },
+    }));
+  };
+
+  const handleDiscountChange = (
+    id: string,
+    discount: number,
+    order: Order
+  ) => {
+    setBillingState((prev) => ({
+      ...prev,
+      [id]: {
+        base: prev[id]?.base ?? "",
+        discount,
+      },
+    }));
+
+    const { baseAmount, finalTotal, itemsCounts } = computeTotals(
+      id,
+      order,
+      undefined,
+      discount
+    );
+    void onTotalUpdate(id, finalTotal, baseAmount, itemsCounts);
+  };
+
+  const handleBaseBlur = (id: string, order: Order) => {
+    const { baseAmount, finalTotal, itemsCounts } = computeTotals(
+      id,
+      order
+    );
+    void onTotalUpdate(id, finalTotal, baseAmount, itemsCounts);
+  };
+
+  const handleItemQtyChange = (
+    id: string,
+    key: string,
+    value: string,
+    order: Order
+  ) => {
+    setItemState((prev) => {
+      const existing = prev[id] || {};
+      const nextForOrder = { ...existing, [key]: value };
+      return { ...prev, [id]: nextForOrder };
+    });
+
+    // recompute totals with updated items
+    const newState: ItemState = {
+      ...itemState,
+      [id]: {
+        ...(itemState[id] || {}),
+        [key]: value,
+      },
+    };
+
+    const { baseAmount, finalTotal, itemsCounts } = computeTotals(
+      id,
+      order,
+      undefined,
+      undefined,
+      newState
+    );
+    void onTotalUpdate(id, finalTotal, baseAmount, itemsCounts);
+  };
+
   const buildItemsSummary = (id: string): string => {
     const items = itemState[id];
     if (!items) return "";
@@ -1396,813 +1601,559 @@ function OrdersView(props: {
       const def = ITEM_PRICES[key];
       if (!def) continue;
       const lineTotal = qty * def.price;
-      lines.push(
-        `${def.label}: ${qty} × ₹${def.price} = ₹${lineTotal}`
-      );
+      lines.push(`${def.label}: ${qty} × ₹${def.price} = ₹${lineTotal}`);
     }
     return lines.join("\n");
   };
 
-  const handleBaseChange = (id: string, raw: string) => {
-    const cleaned = raw.replace(/\D/g, "");
-    setBillingState((prev) => {
-      const existing = prev[id] || { base: "", discount: 0 };
-      return {
-        ...prev,
-        [id]: { ...existing, base: cleaned },
-      };
-    });
-  };
-
-  const handleDiscountChange = (
-    id: string,
-    discount: number,
-    order: Order
-  ) => {
-    setBillingState((prev) => {
-      const existing = prev[id] || { base: "", discount: 0 };
-      return {
-        ...prev,
-        [id]: { ...existing, discount },
-      };
-    });
-
-    const total = computeFinalTotal(
-      id,
-      order,
-      billingState,
-      itemState,
-      discount
-    );
-    if (total !== null) {
-      void onTotalUpdate(id, total);
-    }
-  };
-
-  const handleBaseBlur = (id: string, order: Order) => {
-    const total = computeFinalTotal(id, order, billingState, itemState);
-    if (total !== null) {
-      void onTotalUpdate(id, total);
-    }
-  };
-
-  const handleItemQtyChange = (
-    id: string,
-    order: Order,
-    itemKey: string,
-    raw: string
-  ) => {
-    const cleaned = raw.replace(/\D/g, "");
-    const nextState: Record<string, Record<string, string>> = {
-      ...itemState,
-      [id]: {
-        ...(itemState[id] || {}),
-        [itemKey]: cleaned,
-      },
-    };
-    setItemState(nextState);
-
-    const total = computeFinalTotal(id, order, billingState, nextState);
-    if (total !== null) {
-      void onTotalUpdate(id, total);
-    }
-  };
-
-  const computeFinalTotal = (
-    id: string,
-    order: Order,
-    state: Record<string, { base: string; discount: number }>,
-    itemsState: Record<string, Record<string, string>>,
-    overrideDiscount?: number
-  ): number | null => {
-    const entry = state[id] || { base: "", discount: 0 };
-    const baseStr = entry.base;
-    const discount = overrideDiscount ?? entry.discount ?? 0;
-
-    const itemTotal = getItemTotal(id, itemsState);
-
-    let baseNum = 0;
-    if (itemTotal > 0) {
-      baseNum = itemTotal;
-    } else if (baseStr) {
-      const parsed = parseInt(baseStr, 10);
-      if (Number.isNaN(parsed) || parsed <= 0) return null;
-      baseNum = parsed;
-    } else {
-      return null;
-    }
-
-    const pickupCharge =
-      !order.self_drop && baseNum > 0 && baseNum < 200 ? 15 : 0;
-    const expressCharge = order.express_delivery ? 25 : 0;
-
-    const subtotal = baseNum + pickupCharge + expressCharge;
-    const final = Math.round(subtotal * (1 - discount / 100));
-    return final;
-  };
-
   if (loading) {
     return (
-      <div style={{ fontSize: 13, color: "#9ca3af" }}>Loading orders…</div>
+      <div style={{ fontSize: 13, color: "#9ca3af" }}>
+        Loading pending orders…
+      </div>
     );
   }
 
   if (sortedOrders.length === 0) {
     return (
       <div style={{ fontSize: 13, color: "#9ca3af" }}>
-        No orders for this date (and society) yet.
+        No pending orders for this date (and society).
       </div>
     );
   }
 
-  return (
-    <>
-      <div
-        style={{
-          marginBottom: 10,
-          display: "flex",
-          gap: 8,
-          alignItems: "center",
-          flexWrap: "wrap",
-        }}
-      >
-        <button
-          type="button"
-          onClick={() => void onMarkAllNewAsPicked()}
-          disabled={savingBulk || sortedOrders.length === 0}
-          style={{
-            borderRadius: 999,
-            border: "none",
-            padding: "6px 12px",
-            fontSize: 11,
-            fontWeight: 600,
-            cursor:
-              savingBulk || sortedOrders.length === 0
-                ? "not-allowed"
-                : "pointer",
-            background:
-              "linear-gradient(to right, #f97316, #ea580c, #7c2d12)",
-            color: "#fffbeb",
-            opacity: savingBulk || sortedOrders.length === 0 ? 0.6 : 1,
-          }}
-        >
-          {savingBulk ? "Marking NEW as PICKED…" : "Mark all NEW as PICKED"}
-        </button>
-        <span style={{ fontSize: 11, color: "#9ca3af" }}>
-          Express orders are always at the top; within each group we follow FIFO
-          (oldest first).
-        </span>
-      </div>
-
-      {isMobile ? (
-        <div style={{ display: "grid", gap: 8 }}>
-          {sortedOrders.map((order) => (
-            <OrderCard
-              key={order.id}
-              order={order}
-              saving={savingMap[order.id] ?? false}
-              billingState={billingState}
-              onBaseChange={handleBaseChange}
-              onBaseBlur={handleBaseBlur}
-              onDiscountChange={handleDiscountChange}
-              onStatusChange={onStatusChange}
-              onWorkerChange={onWorkerChange}
-              itemItems={itemState[order.id]}
-              onItemQtyChange={handleItemQtyChange}
-            />
-          ))}
-        </div>
-      ) : (
-        <div
-          style={{
-            marginTop: 4,
-            borderRadius: 12,
-            border: "1px solid #1f2937",
-            overflow: "hidden",
-          }}
-        >
-          <div style={{ overflowX: "auto" }}>
-            <table
-              style={{
-                width: "100%",
-                minWidth: 900,
-                borderCollapse: "collapse",
-                fontSize: 12,
-              }}
-            >
-              <thead
-                style={{
-                  background: "linear-gradient(to right, #020617, #111827)",
-                  textAlign: "left",
-                }}
-              >
-                <tr>
-                  <th style={thStyle}>Customer</th>
-                  <th style={thStyle}>Society / Flat</th>
-                  <th style={thStyle}>Slot</th>
-                  <th style={thStyle}>Status</th>
-                  <th style={thStyle}>Worker</th>
-                  <th style={thStyle}>Billing</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedOrders.map((order, index) => {
-                  const saving = savingMap[order.id] ?? false;
-                  const entry = billingState[order.id] || {
-                    base: "",
-                    discount: 0,
-                  };
-                  const baseStr = entry.base;
-                  const discount = entry.discount ?? 0;
-
-                  const itemTotal = getItemTotal(order.id, itemState);
-
-                  let baseNum = 0;
-                  if (itemTotal > 0) {
-                    baseNum = itemTotal;
-                  } else if (baseStr.trim() !== "") {
-                    const parsed = parseInt(baseStr, 10);
-                    baseNum = Number.isNaN(parsed) ? 0 : parsed;
-                  }
-
-                  const pickupCharge =
-                    !order.self_drop && baseNum > 0 && baseNum < 200
-                      ? 15
-                      : 0;
-                  const expressCharge = order.express_delivery ? 25 : 0;
-                  const subtotal = baseNum + pickupCharge + expressCharge;
-                  const finalCalculated =
-                    baseNum === 0
-                      ? null
-                      : Math.round(subtotal * (1 - discount / 100));
-
-                  const effectiveTotal =
-                    finalCalculated !== null
-                      ? finalCalculated
-                      : order.total_price ?? null;
-
-                  const canWhatsApp =
-                    !!order.phone &&
-                    effectiveTotal !== null &&
-                    (order.status === "READY" || order.status === "DELIVERED");
-
-                  const itemsSummary = buildItemsSummary(order.id);
-
-                  return (
-                    <tr
-                      key={order.id}
-                      style={{
-                        backgroundColor:
-                          index % 2 === 0 ? "#020617" : "#030712",
-                      }}
-                    >
-                      <td style={tdStyle}>
-                        <div style={{ fontWeight: 600 }}>
-                          {order.customer_name}
-                        </div>
-                        <div style={{ fontSize: 11, color: "#9ca3af" }}>
-                          {order.phone}
-                        </div>
-                        {order.notes && (
-                          <div
-                            style={{
-                              fontSize: 11,
-                              color: "#e5e7eb",
-                              marginTop: 2,
-                            }}
-                          >
-                            Notes: {order.notes}
-                          </div>
-                        )}
-                      </td>
-                      <td style={tdStyle}>
-                        <div>{order.society_name}</div>
-                        <div style={{ fontSize: 11, color: "#9ca3af" }}>
-                          Flat: {order.flat_number}
-                        </div>
-                      </td>
-                      <td style={tdStyle}>
-                        <div>{order.pickup_slot}</div>
-                        {order.express_delivery && (
-                          <div
-                            style={{
-                              marginTop: 2,
-                              fontSize: 11,
-                              color: "#f97316",
-                            }}
-                          >
-                            Express
-                          </div>
-                        )}
-                        {order.self_drop && (
-                          <div
-                            style={{
-                              marginTop: 2,
-                              fontSize: 11,
-                              color: "#22c55e",
-                            }}
-                          >
-                            Self drop
-                          </div>
-                        )}
-                      </td>
-                      <td style={tdStyle}>
-                        <StatusBadge status={order.status} />
-                        <select
-                          value={order.status}
-                          onChange={(e: ChangeEvent<HTMLSelectElement>) =>
-                            onStatusChange(
-                              order.id,
-                              e.target.value as OrderStatus
-                            )
-                          }
-                          style={{
-                            marginTop: 4,
-                            fontSize: 11,
-                            borderRadius: 6,
-                            border: "1px solid #374151",
-                            backgroundColor: "#020617",
-                            color: "#e5e7eb",
-                            padding: "2px 6px",
-                            width: "100%",
-                          }}
-                        >
-                          <option value="NEW">NEW</option>
-                          <option value="PICKED">PICKED</option>
-                          <option value="READY">READY</option>
-                          <option value="DELIVERED">DELIVERED</option>
-                        </select>
-                        {saving && (
-                          <div
-                            style={{
-                              marginTop: 2,
-                              fontSize: 10,
-                              color: "#9ca3af",
-                            }}
-                          >
-                            Saving…
-                          </div>
-                        )}
-                      </td>
-                      <td style={tdStyle}>
-                        <select
-                          value={order.worker_name || ""}
-                          onChange={(e: ChangeEvent<HTMLSelectElement>) =>
-                            onWorkerChange(
-                              order.id,
-                              e.target.value || null
-                            )
-                          }
-                          style={{
-                            fontSize: 11,
-                            borderRadius: 6,
-                            border: "1px solid #374151",
-                            backgroundColor: "#020617",
-                            color: "#e5e7eb",
-                            padding: "4px 6px",
-                            width: "100%",
-                          }}
-                        >
-                          <option value="">Unassigned</option>
-                          {WORKERS.map((w) => (
-                            <option key={w} value={w}>
-                              {w}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td style={tdStyle}>
-                        <div
-                          style={{
-                            display: "grid",
-                            gap: 4,
-                            fontSize: 11,
-                          }}
-                        >
-                          <ItemCalculator
-                            order={order}
-                            items={itemState[order.id]}
-                            onQtyChange={handleItemQtyChange}
-                          />
-
-                          <div>
-                            <span>Base amount: </span>
-                            <input
-                              type="text"
-                              inputMode="numeric"
-                              value={baseStr}
-                              onChange={(e) =>
-                                handleBaseChange(order.id, e.target.value)
-                              }
-                              onBlur={() =>
-                                handleBaseBlur(order.id, order)
-                              }
-                              placeholder="₹"
-                              style={{
-                                width: "100%",
-                                borderRadius: 6,
-                                border: "1px solid #374151",
-                                backgroundColor: "#020617",
-                                color: "#e5e7eb",
-                                fontSize: 11,
-                                padding: "4px 6px",
-                              }}
-                            />
-                            {itemTotal > 0 && (
-                              <div
-                                style={{
-                                  marginTop: 2,
-                                  fontSize: 10,
-                                  color: "#9ca3af",
-                                }}
-                              >
-                                Items total: ₹{itemTotal} (auto)
-                              </div>
-                            )}
-                          </div>
-                          <div>
-                            <span>Discount: </span>
-                            <select
-                              value={discount}
-                              onChange={(e) =>
-                                handleDiscountChange(
-                                  order.id,
-                                  Number(e.target.value),
-                                  order
-                                )
-                              }
-                              style={{
-                                marginTop: 2,
-                                width: "100%",
-                                borderRadius: 6,
-                                border: "1px solid #374151",
-                                backgroundColor: "#020617",
-                                color: "#e5e7eb",
-                                fontSize: 11,
-                                padding: "2px 6px",
-                              }}
-                            >
-                              {DISCOUNT_OPTIONS.map((d) => (
-                                <option key={d} value={d}>
-                                  {d === 0 ? "No discount" : `${d}%`}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                          <div style={{ color: "#9ca3af" }}>
-                            <div>
-                              Pickup: ₹{pickupCharge} · Express: ₹
-                              {expressCharge}
-                            </div>
-                            <div>
-                              Final total:{" "}
-                              <span
-                                style={{
-                                  fontWeight: 700,
-                                  color: "#22c55e",
-                                }}
-                              >
-                                {effectiveTotal !== null
-                                  ? `₹${effectiveTotal}`
-                                  : "—"}
-                              </span>
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            disabled={!canWhatsApp}
-                            onClick={() => {
-                              if (!effectiveTotal) return;
-                              openWhatsApp(
-                                order,
-                                effectiveTotal,
-                                discount,
-                                itemsSummary || undefined
-                              );
-                            }}
-                            style={{
-                              marginTop: 4,
-                              borderRadius: 999,
-                              border: "none",
-                              padding: "4px 8px",
-                              fontSize: 11,
-                              fontWeight: 600,
-                              cursor: canWhatsApp ? "pointer" : "not-allowed",
-                              background:
-                                "linear-gradient(to right, #22c55e, #16a34a)",
-                              color: "#022c22",
-                              opacity: canWhatsApp ? 1 : 0.4,
-                            }}
-                          >
-                            WhatsApp customer
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-    </>
-  );
-}
-
-/* ---------- ITEM CALCULATOR (shared) ---------- */
-
-function ItemCalculator(props: {
-  order: Order;
-  items: Record<string, string> | undefined;
-  onQtyChange: (
-    orderId: string,
-    order: Order,
-    itemKey: string,
-    raw: string
-  ) => void;
-}) {
-  const { order, items, onQtyChange } = props;
-  const [open, setOpen] = useState(false);
-  const currentItems = items || {};
-
-  let total = 0;
-  for (const key of Object.keys(ITEM_PRICES)) {
-    const qtyStr = currentItems[key];
-    if (!qtyStr) continue;
-    const qty = parseInt(qtyStr, 10);
-    if (!qty || qty <= 0) continue;
-    total += qty * ITEM_PRICES[key].price;
-  }
-
-  return (
-    <div>
+  const header = (
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        marginBottom: 8,
+        fontSize: 12,
+        alignItems: "center",
+      }}
+    >
+      <div style={{ fontWeight: 600 }}>Pending orders</div>
       <button
         type="button"
-        onClick={() => setOpen((x) => !x)}
+        onClick={onMarkAllNewAsPicked}
+        disabled={savingBulk}
         style={{
-          width: "100%",
           borderRadius: 999,
-          border: "1px solid #374151",
-          padding: "4px 8px",
+          border: "none",
+          padding: "4px 10px",
           fontSize: 11,
           fontWeight: 600,
-          backgroundColor: "#020617",
-          color: "#e5e7eb",
-          cursor: "pointer",
+          cursor: savingBulk ? "not-allowed" : "pointer",
+          background:
+            "linear-gradient(to right, #22c55e, #16a34a, #15803d)",
+          color: "#022c22",
+          opacity: savingBulk ? 0.6 : 1,
         }}
       >
-        {open ? "Hide items" : "Add items"}{" "}
-        {total > 0 ? ` (₹${total})` : ""}
+        {savingBulk ? "Updating…" : "Mark all NEW as PICKED"}
       </button>
-      {open && (
-        <div
-          style={{
-            marginTop: 6,
-            paddingTop: 6,
-            borderTop: "1px dashed #1f2937",
-            display: "grid",
-            gap: 4,
-            fontSize: 11,
-          }}
-        >
-          {Object.entries(ITEM_PRICES).map(([key, def]) => {
-            const qty = currentItems[key] || "";
-            return (
-              <div
-                key={key}
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  gap: 8,
-                  alignItems: "center",
-                }}
-              >
-                <div>
-                  <div>{def.label}</div>
-                  <div
+    </div>
+  );
+
+  if (!isMobile) {
+    // Desktop table
+    return (
+      <div
+        style={{
+          marginTop: 4,
+          borderRadius: 12,
+          border: "1px solid #1f2937",
+          overflow: "hidden",
+        }}
+      >
+        <div style={{ padding: 10, borderBottom: "1px solid #1f2937" }}>
+          {header}
+        </div>
+        <div style={{ overflowX: "auto" }}>
+          <table
+            style={{
+              width: "100%",
+              minWidth: 800,
+              borderCollapse: "collapse",
+              fontSize: 11,
+            }}
+          >
+            <thead
+              style={{
+                background: "linear-gradient(to right, #020617, #111827)",
+              }}
+            >
+              <tr>
+                <th style={thStyle}>Society / Flat</th>
+                <th style={thStyle}>Status / Worker</th>
+                <th style={thStyle}>Items calculator</th>
+                <th style={thStyle}>Base & discount</th>
+                <th style={thStyle}>Total</th>
+                <th style={thStyle}>WhatsApp</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedOrders.map((order, index) => {
+                const saving = savingMap[order.id] ?? false;
+                const billing = billingState[order.id] || {
+                  base: "",
+                  discount: 0,
+                };
+                const itemTotal = getItemTotal(order.id, itemState);
+                const { baseAmount, finalTotal } = computeTotals(
+                  order.id,
+                  order
+                );
+                const effectiveTotal =
+                  finalTotal ?? order.total_price ?? null;
+
+                return (
+                  <tr
+                    key={order.id}
                     style={{
-                      fontSize: 10,
-                      color: "#9ca3af",
+                      backgroundColor:
+                        index % 2 === 0 ? "#020617" : "#030712",
                     }}
                   >
-                    ₹{def.price} per piece
-                  </div>
-                </div>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  value={qty}
-                  onChange={(e) =>
-                    onQtyChange(order.id, order, key, e.target.value)
-                  }
-                  placeholder="0"
-                  style={{
-                    width: 56,
-                    borderRadius: 6,
-                    border: "1px solid #374151",
-                    backgroundColor: "#020617",
-                    color: "#e5e7eb",
-                    fontSize: 11,
-                    padding: "4px 6px",
-                    textAlign: "right",
-                  }}
-                />
-              </div>
-            );
-          })}
+                    <td style={tdStyle}>
+                      <div style={{ fontSize: 12, fontWeight: 600 }}>
+                        {order.society_name}
+                      </div>
+                      <div style={{ fontSize: 11, color: "#9ca3af" }}>
+                        Flat: {order.flat_number}
+                      </div>
+                      <div style={{ fontSize: 11, color: "#9ca3af" }}>
+                        {order.self_drop
+                          ? "Self drop"
+                          : `Pickup: ${order.pickup_slot}`}
+                        {order.express_delivery && (
+                          <span
+                            style={{
+                              color: "#f97316",
+                              marginLeft: 4,
+                            }}
+                          >
+                            • Express
+                          </span>
+                        )}
+                      </div>
+                      {order.notes && (
+                        <div
+                          style={{
+                            marginTop: 2,
+                            fontSize: 11,
+                            color: "#e5e7eb",
+                          }}
+                        >
+                          Notes: {order.notes}
+                        </div>
+                      )}
+                    </td>
+
+                    <td style={tdStyle}>
+                      <div style={{ marginBottom: 4 }}>
+                        <StatusBadge status={order.status} />
+                      </div>
+                      <select
+                        value={order.status}
+                        onChange={(e) =>
+                          onStatusChange(
+                            order.id,
+                            e.target.value as OrderStatus
+                          )
+                        }
+                        style={{
+                          width: "100%",
+                          borderRadius: 999,
+                          border: "1px solid #374151",
+                          backgroundColor: "#020617",
+                          color: "#e5e7eb",
+                          padding: "2px 6px",
+                          fontSize: 11,
+                          marginBottom: 6,
+                        }}
+                      >
+                        <option value="NEW">NEW</option>
+                        <option value="PICKED">PICKED</option>
+                        <option value="READY">READY</option>
+                        <option value="DELIVERED">DELIVERED</option>
+                      </select>
+
+                      <select
+                        value={order.worker_name || ""}
+                        onChange={(e) =>
+                          onWorkerChange(
+                            order.id,
+                            e.target.value || null
+                          )
+                        }
+                        style={{
+                          width: "100%",
+                          borderRadius: 999,
+                          border: "1px solid #374151",
+                          backgroundColor: "#020617",
+                          color: "#e5e7eb",
+                          padding: "2px 6px",
+                          fontSize: 11,
+                        }}
+                      >
+                        <option value="">No worker</option>
+                        {WORKERS.map((w) => (
+                          <option key={w} value={w}>
+                            {w}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+
+                    <td style={tdStyle}>
+                      <ItemCalculator
+                        orderId={order.id}
+                        items={itemState[order.id] || {}}
+                        onChange={(key, val) =>
+                          handleItemQtyChange(order.id, key, val, order)
+                        }
+                      />
+                      <div
+                        style={{
+                          marginTop: 4,
+                          fontSize: 11,
+                          color: "#9ca3af",
+                        }}
+                      >
+                        Items total:{" "}
+                        <span style={{ fontWeight: 600 }}>
+                          ₹{itemTotal}
+                        </span>
+                      </div>
+                    </td>
+
+                    <td style={tdStyle}>
+                      <div style={{ fontSize: 11, marginBottom: 4 }}>
+                        <div style={{ marginBottom: 4 }}>
+                          <label
+                            style={{
+                              display: "block",
+                              fontSize: 10,
+                              color: "#9ca3af",
+                              marginBottom: 2,
+                            }}
+                          >
+                            Base amount (before discount)
+                          </label>
+                          <input
+                            type="number"
+                            value={billing.base}
+                            onChange={(e) =>
+                              handleBaseChange(order.id, e.target.value)
+                            }
+                            onBlur={() => handleBaseBlur(order.id, order)}
+                            placeholder="₹0"
+                            style={{
+                              width: "100%",
+                              borderRadius: 999,
+                              border: "1px solid #374151",
+                              backgroundColor: "#020617",
+                              color: "#e5e7eb",
+                              padding: "4px 8px",
+                              fontSize: 11,
+                            }}
+                          />
+                        </div>
+                        <div>
+                          <label
+                            style={{
+                              display: "block",
+                              fontSize: 10,
+                              color: "#9ca3af",
+                              marginBottom: 2,
+                            }}
+                          >
+                            Discount %
+                          </label>
+                          <select
+                            value={billing.discount}
+                            onChange={(e) =>
+                              handleDiscountChange(
+                                order.id,
+                                Number(e.target.value),
+                                order
+                              )
+                            }
+                            style={{
+                              width: "100%",
+                              borderRadius: 999,
+                              border: "1px solid #374151",
+                              backgroundColor: "#020617",
+                              color: "#e5e7eb",
+                              padding: "4px 8px",
+                              fontSize: 11,
+                            }}
+                          >
+                            {DISCOUNT_OPTIONS.map((d) => (
+                              <option key={d} value={d}>
+                                {d}%
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    </td>
+
+                    <td style={tdStyle}>
+                      <div style={{ fontSize: 11 }}>
+                        <div
+                          style={{
+                            fontSize: 11,
+                            color: "#9ca3af",
+                            marginBottom: 2,
+                          }}
+                        >
+                          Final total
+                        </div>
+                        <div style={{ fontSize: 13, fontWeight: 700 }}>
+                          {effectiveTotal === null
+                            ? "—"
+                            : `₹${effectiveTotal}`}
+                        </div>
+                        {order.total_price &&
+                          effectiveTotal !== order.total_price && (
+                            <div
+                              style={{
+                                fontSize: 10,
+                                color: "#9ca3af",
+                                marginTop: 2,
+                              }}
+                            >
+                              Saved locally but not updated? Click any field to
+                              recalc and save.
+                            </div>
+                          )}
+                      </div>
+                    </td>
+
+                    <td style={tdStyle}>
+                      <button
+                        type="button"
+                        disabled={!effectiveTotal || saving}
+                        onClick={() => {
+                          const { finalTotal, baseAmount, itemsCounts } =
+                            computeTotals(order.id, order);
+                          const totalToUse =
+                            finalTotal ?? order.total_price ?? 0;
+                          if (finalTotal && baseAmount) {
+                            void onTotalUpdate(
+                              order.id,
+                              finalTotal,
+                              baseAmount,
+                              itemsCounts
+                            );
+                          }
+                          const itemsText = buildItemsSummary(order.id);
+                          openWhatsApp(
+                            order,
+                            totalToUse,
+                            billing.discount,
+                            itemsText
+                          );
+                        }}
+                        style={{
+                          borderRadius: 999,
+                          border: "none",
+                          padding: "6px 10px",
+                          fontSize: 11,
+                          fontWeight: 600,
+                          cursor:
+                            !effectiveTotal || saving
+                              ? "not-allowed"
+                              : "pointer",
+                          background:
+                            "linear-gradient(to right, #22c55e, #16a34a)",
+                          color: "#022c22",
+                          opacity: !effectiveTotal || saving ? 0.6 : 1,
+                          marginBottom: 4,
+                        }}
+                      >
+                        WhatsApp summary
+                      </button>
+                      <div
+                        style={{
+                          fontSize: 10,
+                          color: "#9ca3af",
+                          maxWidth: 160,
+                        }}
+                      >
+                        Sends amount + UPI link + item breakup to customer.
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
-      )}
+      </div>
+    );
+  }
+
+  // Mobile cards view
+  return (
+    <div style={{ display: "grid", gap: 8 }}>
+      {header}
+      {sortedOrders.map((order) => {
+        const billing = billingState[order.id] || {
+          base: "",
+          discount: 0,
+        };
+        const itemTotal = getItemTotal(order.id, itemState);
+        const { baseAmount, finalTotal } = computeTotals(order.id, order);
+        const effectiveTotal = finalTotal ?? order.total_price ?? null;
+        const saving = savingMap[order.id] ?? false;
+
+        return (
+          <OrderCard
+            key={order.id}
+            order={order}
+            billing={billing}
+            itemItems={itemState[order.id] || {}}
+            itemTotal={itemTotal}
+            effectiveTotal={effectiveTotal}
+            saving={saving}
+            onStatusChange={onStatusChange}
+            onWorkerChange={onWorkerChange}
+            onBaseChange={(val) => handleBaseChange(order.id, val)}
+            onBaseBlur={() => handleBaseBlur(order.id, order)}
+            onDiscountChange={(val) =>
+              handleDiscountChange(order.id, val, order)
+            }
+            onItemQtyChange={(key, val) =>
+              handleItemQtyChange(order.id, key, val, order)
+            }
+            onWhatsApp={() => {
+              const { baseAmount, finalTotal, itemsCounts } = computeTotals(
+                order.id,
+                order
+              );
+              const totalToUse =
+                finalTotal ?? order.total_price ?? 0;
+              if (finalTotal && baseAmount) {
+                void onTotalUpdate(
+                  order.id,
+                  finalTotal,
+                  baseAmount,
+                  itemsCounts
+                );
+              }
+              const itemsText = buildItemsSummary(order.id);
+              openWhatsApp(
+                order,
+                totalToUse,
+                billing.discount,
+                itemsText
+              );
+            }}
+          />
+        );
+      })}
     </div>
   );
 }
 
-/* ---------- MOBILE ORDER CARD ---------- */
-
 function OrderCard(props: {
   order: Order;
+  billing: { base: string; discount: number };
+  itemItems: Record<string, string>;
+  itemTotal: number;
+  effectiveTotal: number | null;
   saving: boolean;
-  billingState: Record<string, { base: string; discount: number }>;
-  onBaseChange: (id: string, raw: string) => void;
-  onBaseBlur: (id: string, order: Order) => void;
-  onDiscountChange: (id: string, discount: number, order: Order) => void;
   onStatusChange: (id: string, status: OrderStatus) => void;
   onWorkerChange: (id: string, worker: string | null) => void;
-  itemItems?: Record<string, string>;
-  onItemQtyChange: (
-    orderId: string,
-    order: Order,
-    itemKey: string,
-    raw: string
-  ) => void;
+  onBaseChange: (value: string) => void;
+  onBaseBlur: () => void;
+  onDiscountChange: (value: number) => void;
+  onItemQtyChange: (key: string, value: string) => void;
+  onWhatsApp: () => void;
 }) {
   const {
     order,
+    billing,
+    itemItems,
+    itemTotal,
+    effectiveTotal,
     saving,
-    billingState,
+    onStatusChange,
+    onWorkerChange,
     onBaseChange,
     onBaseBlur,
     onDiscountChange,
-    onStatusChange,
-    onWorkerChange,
-    itemItems,
     onItemQtyChange,
+    onWhatsApp,
   } = props;
 
-  const entry = billingState[order.id] || { base: "", discount: 0 };
-  const baseStr = entry.base;
-  const discount = entry.discount ?? 0;
-
-  const itemsForOrder = itemItems || {};
-  let itemTotal = 0;
-  for (const key of Object.keys(ITEM_PRICES)) {
-    const qtyStr = itemsForOrder[key];
-    if (!qtyStr) continue;
-    const qty = parseInt(qtyStr, 10);
-    if (!qty || qty <= 0) continue;
-    itemTotal += qty * ITEM_PRICES[key].price;
-  }
-
-  let baseNum = 0;
-  if (itemTotal > 0) {
-    baseNum = itemTotal;
-  } else if (baseStr.trim() !== "") {
-    const parsed = parseInt(baseStr, 10);
-    baseNum = Number.isNaN(parsed) ? 0 : parsed;
-  }
-
-  const pickupCharge =
-    !order.self_drop && baseNum > 0 && baseNum < 200 ? 15 : 0;
-  const expressCharge = order.express_delivery ? 25 : 0;
-  const subtotal = baseNum + pickupCharge + expressCharge;
-  const finalCalculated =
-    baseNum === 0 ? null : Math.round(subtotal * (1 - discount / 100));
-
-  const effectiveTotal =
-    finalCalculated !== null ? finalCalculated : order.total_price ?? null;
-
-  const canWhatsApp =
-    !!order.phone &&
-    effectiveTotal !== null &&
-    (order.status === "READY" || order.status === "DELIVERED");
-
-  const buildItemsSummary = (): string => {
-    const lines: string[] = [];
-    for (const key of Object.keys(itemsForOrder)) {
-      const qtyStr = itemsForOrder[key];
-      if (!qtyStr) continue;
-      const qty = parseInt(qtyStr, 10);
-      if (!qty || qty <= 0) continue;
-      const def = ITEM_PRICES[key];
-      if (!def) continue;
-      const lineTotal = qty * def.price;
-      lines.push(
-        `${def.label}: ${qty} × ₹${def.price} = ₹${lineTotal}`
-      );
-    }
-    return lines.join("\n");
-  };
+  const [openItems, setOpenItems] = useState(false);
 
   return (
     <div
       style={{
         borderRadius: 12,
-        border: "1px solid #111827",
+        border: "1px solid #1f2937",
         padding: 10,
         background:
-          "radial-gradient(circle at top left, #111827cc, #020617)",
+          "radial-gradient(circle at top left, #020617, #020617)",
       }}
     >
-      {/* Top row: customer & basic info */}
       <div
         style={{
           display: "flex",
           justifyContent: "space-between",
           gap: 8,
+          marginBottom: 6,
         }}
       >
         <div>
-          <div
-            style={{
-              fontSize: 14,
-              fontWeight: 600,
-            }}
-          >
-            {order.customer_name}
+          <div style={{ fontSize: 13, fontWeight: 600 }}>
+            {order.society_name}
           </div>
           <div style={{ fontSize: 11, color: "#9ca3af" }}>
-            {order.society_name} • Flat: {order.flat_number}
+            Flat: {order.flat_number}
           </div>
-          <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>
-            {order.pickup_slot}
+          <div style={{ fontSize: 11, color: "#9ca3af" }}>
+            {order.self_drop ? "Self drop" : `Pickup: ${order.pickup_slot}`}
             {order.express_delivery && (
               <span style={{ color: "#f97316", marginLeft: 4 }}>
                 • Express
-              </span>
-            )}
-            {order.self_drop && (
-              <span style={{ color: "#22c55e", marginLeft: 4 }}>
-                • Self drop
               </span>
             )}
           </div>
           {order.notes && (
             <div
               style={{
+                marginTop: 2,
                 fontSize: 11,
                 color: "#e5e7eb",
-                marginTop: 4,
               }}
             >
               Notes: {order.notes}
             </div>
           )}
         </div>
-        <div style={{ textAlign: "right" }}>
-          <StatusBadge status={order.status} />
-          <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 4 }}>
-            {order.phone}
+        <div style={{ textAlign: "right", fontSize: 11 }}>
+          <div style={{ marginBottom: 4 }}>
+            <StatusBadge status={order.status} />
           </div>
-          {saving && (
-            <div
-              style={{
-                marginTop: 2,
-                fontSize: 10,
-                color: "#9ca3af",
-              }}
-            >
-              Saving…
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Status + worker controls */}
-      <div
-        style={{
-          marginTop: 8,
-          paddingTop: 6,
-          borderTop: "1px dashed #1f2937",
-          display: "grid",
-          gap: 6,
-          fontSize: 11,
-        }}
-      >
-        <div>
-          <div style={{ marginBottom: 2 }}>Status</div>
           <select
             value={order.status}
-            onChange={(e: ChangeEvent<HTMLSelectElement>) =>
+            onChange={(e) =>
               onStatusChange(order.id, e.target.value as OrderStatus)
             }
             style={{
-              width: "100%",
-              borderRadius: 6,
+              borderRadius: 999,
               border: "1px solid #374151",
               backgroundColor: "#020617",
               color: "#e5e7eb",
-              fontSize: 12,
-              padding: "4px 6px",
+              padding: "2px 6px",
+              fontSize: 11,
+              marginBottom: 4,
             }}
           >
             <option value="NEW">NEW</option>
@@ -2210,25 +2161,19 @@ function OrderCard(props: {
             <option value="READY">READY</option>
             <option value="DELIVERED">DELIVERED</option>
           </select>
-        </div>
-        <div>
-          <div style={{ marginBottom: 2 }}>Worker</div>
           <select
             value={order.worker_name || ""}
-            onChange={(e: ChangeEvent<HTMLSelectElement>) =>
-              onWorkerChange(order.id, e.target.value || null)
-            }
+            onChange={(e) => onWorkerChange(order.id, e.target.value || null)}
             style={{
-              width: "100%",
-              borderRadius: 6,
+              borderRadius: 999,
               border: "1px solid #374151",
               backgroundColor: "#020617",
               color: "#e5e7eb",
-              fontSize: 12,
-              padding: "4px 6px",
+              padding: "2px 6px",
+              fontSize: 11,
             }}
           >
-            <option value="">Unassigned</option>
+            <option value="">No worker</option>
             {WORKERS.map((w) => (
               <option key={w} value={w}>
                 {w}
@@ -2238,124 +2183,217 @@ function OrderCard(props: {
         </div>
       </div>
 
-      {/* Billing block */}
-      <div
+      <button
+        type="button"
+        onClick={() => setOpenItems((x) => !x)}
         style={{
-          marginTop: 8,
-          paddingTop: 6,
-          borderTop: "1px dashed #1f2937",
-          display: "grid",
-          gap: 6,
+          borderRadius: 8,
+          border: "1px dashed #374151",
+          padding: "4px 8px",
           fontSize: 11,
+          width: "100%",
+          textAlign: "left",
+          backgroundColor: "#020617",
+          color: "#e5e7eb",
+          marginBottom: 6,
         }}
       >
-        <ItemCalculator
-          order={order}
-          items={itemsForOrder}
-          onQtyChange={onItemQtyChange}
-        />
+        {openItems ? "Hide items" : "Add / edit items"} (₹{itemTotal})
+      </button>
 
+      {openItems && (
+        <div
+          style={{
+            marginBottom: 6,
+            padding: 6,
+            borderRadius: 8,
+            border: "1px solid #111827",
+            backgroundColor: "#030712",
+          }}
+        >
+          <ItemCalculator
+            orderId={order.id}
+            items={itemItems}
+            onChange={(key, val) => onItemQtyChange(key, val)}
+          />
+        </div>
+      )}
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1.1fr 0.9fr",
+          gap: 8,
+          fontSize: 11,
+          marginBottom: 6,
+        }}
+      >
         <div>
-          <div style={{ marginBottom: 2 }}>Base amount</div>
+          <label
+            style={{
+              display: "block",
+              fontSize: 10,
+              color: "#9ca3af",
+              marginBottom: 2,
+            }}
+          >
+            Base amount (before discount)
+          </label>
           <input
-            type="text"
-            inputMode="numeric"
-            value={baseStr}
-            onChange={(e) => onBaseChange(order.id, e.target.value)}
-            onBlur={() => onBaseBlur(order.id, order)}
-            placeholder="₹"
+            type="number"
+            value={billing.base}
+            onChange={(e) => onBaseChange(e.target.value)}
+            onBlur={onBaseBlur}
+            placeholder="₹0"
             style={{
               width: "100%",
-              borderRadius: 6,
+              borderRadius: 999,
               border: "1px solid #374151",
               backgroundColor: "#020617",
               color: "#e5e7eb",
-              fontSize: 12,
-              padding: "4px 6px",
+              padding: "4px 8px",
+              fontSize: 11,
             }}
           />
-          {itemTotal > 0 && (
-            <div
-              style={{
-                marginTop: 2,
-                fontSize: 10,
-                color: "#9ca3af",
-              }}
-            >
-              Items total: ₹{itemTotal} (auto)
-            </div>
-          )}
         </div>
         <div>
-          <div style={{ marginBottom: 2 }}>Discount</div>
+          <label
+            style={{
+              display: "block",
+              fontSize: 10,
+              color: "#9ca3af",
+              marginBottom: 2,
+            }}
+          >
+            Discount %
+          </label>
           <select
-            value={discount}
-            onChange={(e) =>
-              onDiscountChange(order.id, Number(e.target.value), order)
-            }
+            value={billing.discount}
+            onChange={(e) => onDiscountChange(Number(e.target.value))}
             style={{
               width: "100%",
-              borderRadius: 6,
+              borderRadius: 999,
               border: "1px solid #374151",
               backgroundColor: "#020617",
               color: "#e5e7eb",
-              fontSize: 12,
-              padding: "4px 6px",
+              padding: "4px 8px",
+              fontSize: 11,
             }}
           >
             {DISCOUNT_OPTIONS.map((d) => (
               <option key={d} value={d}>
-                {d === 0 ? "No discount" : `${d}%`}
+                {d}%
               </option>
             ))}
           </select>
         </div>
-        <div style={{ color: "#9ca3af" }}>
-          <div>
-            Pickup: ₹{pickupCharge} · Express: ₹{expressCharge}
+      </div>
+
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          fontSize: 11,
+          marginBottom: 6,
+        }}
+      >
+        <div>
+          <div style={{ color: "#9ca3af", marginBottom: 2 }}>
+            Final total
           </div>
-          <div>
-            Final total:{" "}
-            <span
-              style={{
-                fontWeight: 700,
-                color: "#22c55e",
-              }}
-            >
-              {effectiveTotal !== null ? `₹${effectiveTotal}` : "—"}
-            </span>
+          <div style={{ fontSize: 14, fontWeight: 700 }}>
+            {effectiveTotal === null ? "—" : `₹${effectiveTotal}`}
           </div>
         </div>
         <button
           type="button"
-          disabled={!canWhatsApp}
-          onClick={() => {
-            if (!effectiveTotal) return;
-            const summary = buildItemsSummary();
-            openWhatsApp(
-              order,
-              effectiveTotal,
-              discount,
-              summary || undefined
-            );
-          }}
+          disabled={!effectiveTotal || saving}
+          onClick={onWhatsApp}
           style={{
-            marginTop: 4,
-            width: "100%",
             borderRadius: 999,
             border: "none",
             padding: "6px 10px",
-            fontSize: 12,
+            fontSize: 11,
             fontWeight: 600,
-            cursor: canWhatsApp ? "pointer" : "not-allowed",
-            background: "linear-gradient(to right, #22c55e, #16a34a)",
+            cursor: !effectiveTotal || saving ? "not-allowed" : "pointer",
+            background:
+              "linear-gradient(to right, #22c55e, #16a34a, #15803d)",
             color: "#022c22",
-            opacity: canWhatsApp ? 1 : 0.4,
+            opacity: !effectiveTotal || saving ? 0.6 : 1,
           }}
         >
-          WhatsApp customer
+          WhatsApp summary
         </button>
       </div>
+
+      <div style={{ fontSize: 10, color: "#9ca3af" }}>
+        Sends amount + UPI link + item breakup to customer.
+      </div>
+    </div>
+  );
+}
+
+function ItemCalculator(props: {
+  orderId: string;
+  items: Record<string, string>;
+  onChange: (key: string, value: string) => void;
+}) {
+  const { items, onChange } = props;
+
+  const handleChange =
+    (key: string) => (e: ChangeEvent<HTMLInputElement>) => {
+      const v = e.target.value;
+      if (v === "") {
+        onChange(key, "");
+        return;
+      }
+      if (/^\d+$/.test(v)) {
+        onChange(key, v);
+      }
+    };
+
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "1fr 1fr",
+        gap: 4,
+      }}
+    >
+      {Object.entries(ITEM_PRICES).map(([key, def]) => (
+        <label
+          key={key}
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 4,
+            fontSize: 10,
+          }}
+        >
+          <span>
+            {def.label}
+            <span style={{ color: "#9ca3af" }}> (₹{def.price})</span>
+          </span>
+          <input
+            type="text"
+            value={items[key] ?? ""}
+            onChange={handleChange(key)}
+            inputMode="numeric"
+            style={{
+              width: 40,
+              borderRadius: 999,
+              border: "1px solid #374151",
+              backgroundColor: "#020617",
+              color: "#e5e7eb",
+              padding: "2px 4px",
+              fontSize: 10,
+              textAlign: "center",
+            }}
+          />
+        </label>
+      ))}
     </div>
   );
 }
@@ -2363,7 +2401,7 @@ function OrderCard(props: {
 /* ---------- Helpers ---------- */
 
 function StatusBadge({ status }: { status: OrderStatus }) {
-  let bg = "#111827";
+  let bg = "#1f2937";
   let text = "#e5e7eb";
 
   if (status === "NEW") {
@@ -2463,104 +2501,89 @@ function openWhatsApp(
 
   const thanksLine = "Thank you for choosing us!";
 
-  const text = `Hi ${order.customer_name || ""},\n${statusLine}\n${discountLine}${paymentLine}${itemsSection}\nFlat: ${order.flat_number}, ${order.society_name}\n${thanksLine}`;
+  const text = `${statusLine}\n\n${discountLine}${paymentLine}${itemsSection}\n${thanksLine}`;
 
   const url = `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
   window.open(url, "_blank");
 }
 
-// calculate Monday–Sunday week around a date
-function getWeekRange(dateStr: string): { from: string; to: string } {
-  const d = new Date(dateStr);
-  if (Number.isNaN(d.getTime())) {
-    const today = new Date();
-    return {
-      from: today.toISOString().slice(0, 10),
-      to: today.toISOString().slice(0, 10),
-    };
-  }
-  const day = d.getDay(); // 0=Sun, 1=Mon…
-  const diffToMonday = (day + 6) % 7; // Monday=0
-  const start = new Date(d);
-  start.setDate(d.getDate() - diffToMonday);
-  const end = new Date(start);
-  end.setDate(start.getDate() + 6);
+function getWeekRange(date: string): { from: string; to: string } {
+  const current = new Date(date + "T00:00:00");
+  const day = current.getDay(); // 0 (Sun) to 6 (Sat)
+  const diffToMonday = (day + 6) % 7; // how many days to go back to Monday
+  const monday = new Date(current);
+  monday.setDate(current.getDate() - diffToMonday);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
   return {
-    from: start.toISOString().slice(0, 10),
-    to: end.toISOString().slice(0, 10),
+    from: monday.toISOString().slice(0, 10),
+    to: sunday.toISOString().slice(0, 10),
   };
 }
 
-function getMonthRange(dateStr: string): { from: string; to: string } {
-  const d = new Date(dateStr);
-  if (Number.isNaN(d.getTime())) {
-    const today = new Date();
-    return {
-      from: today.toISOString().slice(0, 10),
-      to: today.toISOString().slice(0, 10),
-    };
-  }
-  const start = new Date(d.getFullYear(), d.getMonth(), 1);
-  const end = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+function getMonthRange(date: string): { from: string; to: string } {
+  const current = new Date(date + "T00:00:00");
+  const year = current.getFullYear();
+  const month = current.getMonth(); // 0-based
+  const first = new Date(year, month, 1);
+  const last = new Date(year, month + 1, 0);
   return {
-    from: start.toISOString().slice(0, 10),
-    to: end.toISOString().slice(0, 10),
+    from: first.toISOString().slice(0, 10),
+    to: last.toISOString().slice(0, 10),
   };
 }
-
-/* ---------- Table & filter styles ---------- */
-
-const thStyle: CSSProperties = {
-  padding: "8px 10px",
-  borderBottom: "1px solid #1f2937",
-  fontSize: 11,
-  textTransform: "uppercase",
-  letterSpacing: 0.05,
-  color: "#9ca3af",
-};
-
-const tdStyle: CSSProperties = {
-  padding: "8px 10px",
-  borderTop: "1px solid #111827",
-  verticalAlign: "top",
-};
 
 const filterLabelStyle: CSSProperties = {
   display: "block",
   fontSize: 11,
-  fontWeight: 600,
-  color: "#e5e7eb",
-  marginBottom: 4,
+  color: "#9ca3af",
+  marginBottom: 2,
 };
 
 const filterInputStyle: CSSProperties = {
-  borderRadius: 8,
-  border: "1px solid #374151",
-  padding: "6px 10px",
-  fontSize: 13,
+  width: "100%",
+  borderRadius: 999,
+  border: "1px solid #1f2937",
+  padding: "4px 8px",
   backgroundColor: "#020617",
   color: "#e5e7eb",
+  fontSize: 12,
 };
 
 const pillStyle: CSSProperties = {
-  padding: "4px 8px",
   borderRadius: 999,
-  border: "1px solid #374151",
-  background: "radial-gradient(circle at top left, #22c55e22, #22c55e0d)",
+  border: "1px solid #1f2937",
+  padding: "4px 10px",
+  backgroundColor: "#020617",
 };
 
 const summaryPillStyle: CSSProperties = {
-  padding: "4px 8px",
   borderRadius: 999,
   border: "1px solid #1f2937",
+  padding: "4px 10px",
   backgroundColor: "#020617",
+  fontSize: 11,
 };
 
 const rangeChipStyle: CSSProperties = {
   borderRadius: 999,
-  border: "1px solid #374151",
+  border: "1px solid #0f766e",
   padding: "4px 10px",
-  backgroundColor: "#020617",
-  color: "#e5e7eb",
+  backgroundColor: "#022c22",
+  color: "#a7f3d0",
   cursor: "pointer",
+};
+
+const thStyle: CSSProperties = {
+  padding: "6px 8px",
+  borderBottom: "1px solid #1f2937",
+  fontSize: 11,
+  fontWeight: 600,
+};
+
+const tdStyle: CSSProperties = {
+  padding: "6px 8px",
+  borderBottom: "1px solid #111827",
+  verticalAlign: "top",
+  fontSize: 11,
 };

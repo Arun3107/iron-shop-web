@@ -35,7 +35,10 @@ interface OrderRow {
   status: OrderStatus;
   total_price: number | null;
   worker_name?: string | null;
+  base_amount?: number | null;
+  items_json?: Record<string, number> | null;
 }
+
 
 interface Summary {
   from: string;
@@ -275,10 +278,14 @@ export async function PATCH(request: Request) {
     }
 
     // Single order partial update
-    if (body?.id) {
-      const patch: Partial<
-        Pick<OrderRow, "status" | "worker_name" | "total_price">
-      > = {};
+if (body?.id) {
+  const patch: Partial<
+    Pick<
+      OrderRow,
+      "status" | "worker_name" | "total_price" | "base_amount" | "items_json"
+    >
+  > = {};
+
 
       if (typeof body.status === "string") {
         patch.status = body.status as OrderStatus;
@@ -292,6 +299,17 @@ export async function PATCH(request: Request) {
       ) {
         patch.total_price = body.total_price;
       }
+
+      if (
+  typeof body.base_amount === "number" ||
+  body.base_amount === null
+) {
+  patch.base_amount = body.base_amount;
+}
+if (body.items_json && typeof body.items_json === "object") {
+  patch.items_json = body.items_json as Record<string, number>;
+}
+
 
       if (Object.keys(patch).length === 0) {
         return NextResponse.json(
