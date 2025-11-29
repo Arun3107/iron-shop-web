@@ -31,7 +31,7 @@ const PRICE_ITEMS = [
   { id: "coat", label: "Coat / Blazer", price: 50 },
 ];
 
-type View = "home" | "book" | "orders";
+type View = "home" | "book" | "orders" | "confirmation";
 
 /**
  * Earliest pickup date:
@@ -51,6 +51,8 @@ function getEarliestPickupDateISO() {
 
 export default function Home() {
   const [view, setView] = useState<View>("home");
+  const [confirmationMessage, setConfirmationMessage] = useState("");
+
 
   return (
     <main
@@ -65,27 +67,48 @@ export default function Home() {
         fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
       }}
     >
-      <div
+            <div
         style={{
           width: "100%",
           maxWidth: 520,
-          backgroundColor: "rgba(255,255,255,0.96)",
+          backgroundColor: view === "confirmation"
+            ? "#020617"
+            : "rgba(255,255,255,0.96)",
           borderRadius: 20,
           padding: 20,
           boxShadow: "0 16px 40px rgba(0,0,0,0.14)",
           backdropFilter: "blur(6px)",
+          color: view === "confirmation" ? "#f9fafb" : "inherit",
         }}
       >
-        {view === "home" && (
+
+                {view === "home" && (
           <HomeScreen
             onBookClick={() => setView("book")}
             onOrdersClick={() => setView("orders")}
           />
         )}
 
-        {view === "book" && <BookingForm onBack={() => setView("home")} />}
+        {view === "book" && (
+          <BookingForm
+            onBack={() => setView("home")}
+            onConfirm={(msg) => {
+              setConfirmationMessage(msg);
+              setView("confirmation");
+            }}
+          />
+        )}
 
         {view === "orders" && <MyOrders onBack={() => setView("home")} />}
+
+        {view === "confirmation" && (
+          <BookingConfirmation
+            message={confirmationMessage}
+            onBookNew={() => setView("book")}
+            onHome={() => setView("home")}
+          />
+        )}
+
       </div>
 
       {/* Add-to-home-screen tip (visible under the card on mobile) */}
@@ -262,7 +285,11 @@ function HomeScreen(props: {
 
 /* ---------- BOOKING FORM ---------- */
 
-function BookingForm(props: { onBack: () => void }) {
+function BookingForm(props: {
+  onBack: () => void;
+  onConfirm: (message: string) => void;
+}) {
+
   const earliestPickupDate = getEarliestPickupDateISO();
 
   const [customerName, setCustomerName] = useState("");
@@ -471,17 +498,21 @@ function BookingForm(props: { onBack: () => void }) {
         body: JSON.stringify({ name: finalSociety }),
       });
 
-      saveUserInfo();
+            saveUserInfo();
 
       const baseMsg = selfDrop
         ? `Thank you! Your drop is booked for ${pickupDate} in the ${selectedSlot.label.toLowerCase()} slot (${selectedSlot.timeRange}). Please drop and collect your clothes from the shop.`
         : `Thank you! Your pickup is booked for ${pickupDate} in the ${selectedSlot.label.toLowerCase()} slot (${selectedSlot.timeRange}).`;
 
-      setMessage(baseMsg);
+      // Show black confirmation page with this text
+      props.onConfirm(baseMsg);
+
+      // Reset local fields for next booking
       setItemsText("");
       setExpressDelivery(false);
       setUseEstimator(false);
       setQuantities({});
+
     } catch (err) {
       console.error("Request error:", err);
       setMessage("Something went wrong. Please try again.");
@@ -999,6 +1030,103 @@ function BookingForm(props: { onBack: () => void }) {
     </div>
   );
 }
+
+function BookingConfirmation(props: {
+  message: string;
+  onBookNew: () => void;
+  onHome: () => void;
+}) {
+  return (
+    <div
+      style={{
+        minHeight: 260,
+        display: "grid",
+        gap: 16,
+        alignContent: "center",
+        textAlign: "center",
+      }}
+    >
+      <h2
+        style={{
+          fontSize: 22,
+          fontWeight: 800,
+          margin: 0,
+          marginBottom: 8,
+        }}
+      >
+        Booking Confirmed
+      </h2>
+
+      <p
+        style={{
+          fontSize: 13,
+          lineHeight: 1.6,
+          color: "#e5e7eb",
+          whiteSpace: "pre-line",
+          margin: 0,
+        }}
+      >
+        {props.message}
+      </p>
+
+      <p
+        style={{
+          fontSize: 11,
+          color: "#9ca3af",
+          margin: 0,
+        }}
+      >
+        You will also receive a WhatsApp update once your clothes are ready.
+      </p>
+
+      <div
+        style={{
+          marginTop: 12,
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 8,
+          justifyContent: "center",
+        }}
+      >
+        <button
+          type="button"
+          onClick={props.onBookNew}
+          style={{
+            borderRadius: 999,
+            padding: "10px 14px",
+            border: "none",
+            background:
+              "linear-gradient(135deg, #f97316 0%, #ea580c 40%, #7c2d12 100%)",
+            color: "white",
+            fontSize: 14,
+            fontWeight: 700,
+            cursor: "pointer",
+          }}
+        >
+          Book Another Order
+        </button>
+
+        <button
+          type="button"
+          onClick={props.onHome}
+          style={{
+            borderRadius: 999,
+            padding: "10px 14px",
+            border: "1px solid #4b5563",
+            backgroundColor: "transparent",
+            color: "#e5e7eb",
+            fontSize: 14,
+            fontWeight: 600,
+            cursor: "pointer",
+          }}
+        >
+          Go to Home
+        </button>
+      </div>
+    </div>
+  );
+}
+
 
 /* ---------- MY ORDERS (real view) ---------- */
 
