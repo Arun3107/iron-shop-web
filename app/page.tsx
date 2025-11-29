@@ -1,11 +1,6 @@
 "use client";
-
-import {
-  useEffect,
-  useState,
-  type FormEvent,
-  type CSSProperties,
-} from "react";
+import Image from "next/image";
+import { useEffect, useState, type FormEvent, type CSSProperties } from "react";
 
 const PICKUP_SLOTS = [
   {
@@ -53,7 +48,6 @@ export default function Home() {
   const [view, setView] = useState<View>("home");
   const [confirmationMessage, setConfirmationMessage] = useState("");
 
-
   return (
     <main
       style={{
@@ -67,13 +61,12 @@ export default function Home() {
         fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
       }}
     >
-            <div
+      <div
         style={{
           width: "100%",
           maxWidth: 520,
-          backgroundColor: view === "confirmation"
-            ? "#020617"
-            : "rgba(255,255,255,0.96)",
+          backgroundColor:
+            view === "confirmation" ? "#020617" : "rgba(255,255,255,0.96)",
           borderRadius: 20,
           padding: 20,
           boxShadow: "0 16px 40px rgba(0,0,0,0.14)",
@@ -81,13 +74,31 @@ export default function Home() {
           color: view === "confirmation" ? "#f9fafb" : "inherit",
         }}
       >
+        {view === "home" && (
+  <>
+    <div style={{ marginBottom: 16 }}>
+      <Image
+        src="/laundry-banner.svg"
+        alt="Laundry and dry cleaning"
+        width={1200}
+        height={628}
+        style={{
+          width: "100%",
+          height: "auto",
+          borderRadius: 16,
+          display: "block",
+        }}
+        priority
+      />
+    </div>
 
-                {view === "home" && (
-          <HomeScreen
-            onBookClick={() => setView("book")}
-            onOrdersClick={() => setView("orders")}
-          />
-        )}
+    <HomeScreen
+      onBookClick={() => setView("book")}
+      onOrdersClick={() => setView("orders")}
+    />
+  </>
+)}
+
 
         {view === "book" && (
           <BookingForm
@@ -108,7 +119,6 @@ export default function Home() {
             onHome={() => setView("home")}
           />
         )}
-
       </div>
 
       {/* Add-to-home-screen tip (visible under the card on mobile) */}
@@ -137,106 +147,183 @@ export default function Home() {
 
 /* ---------- HOME SCREEN ---------- */
 
-function HomeScreen(props: {
-  onBookClick: () => void;
-  onOrdersClick: () => void;
-}) {
+function HomeScreen(props: { onBookClick: () => void; onOrdersClick: () => void }) {
   return (
-    <div style={{ display: "grid", gap: 16 }}>
+    <div style={{ display: "grid", gap: 20 }}>
+      {/* Thumbnail rate card */}
       <div
         style={{
-          borderRadius: 18,
-          padding: 18,
-          background:
-            "radial-gradient(circle at top left, #fed7aa 0%, #f97316 35%, #7c2d12 100%)",
-          color: "white",
-          position: "relative",
-          overflow: "hidden",
+          padding: 16,
+          borderRadius: 16,
+          backgroundColor: "#f8fafc",
+          border: "1px solid #e2e8f0",
+          display: "grid",
+          gap: 10,
         }}
       >
+        {/* Header */}
         <div
           style={{
-            position: "absolute",
-            right: -40,
-            top: -40,
-            width: 140,
-            height: 140,
-            borderRadius: "50%",
-            border: "18px solid rgba(255,255,255,0.18)",
-          }}
-        />
-        <h1
-          style={{
-            fontSize: 26,
-            fontWeight: 700,
-            marginBottom: 4,
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 8,
+            alignItems: "center",
           }}
         >
-          Professional Ironing Service
-        </h1>
-        <p
-          style={{
-            fontSize: 18,
-            fontWeight: 600,
-            marginBottom: 8,
-          }}
-        >
-          PSR Aster
-        </p>
-
-        <p style={{ fontSize: 13, opacity: 0.9, marginBottom: 10 }}>
-          Professional steam ironing for your daily wear, bedsheets, and party
-          outfits – with free pickup & delivery on orders above ₹200.
-        </p>
-        <div style={{ fontSize: 12, opacity: 0.95, lineHeight: 1.5 }}>
-          <div style={{ display: "flex", gap: 8, marginBottom: 2 }}>
-            <span>📍</span>
-            <div>
-              <div>PSR Aster, Chambenahally, Sarjapura Road,</div>
-              <div style={{ marginLeft: 0 }}>Bengaluru – 562125</div>
+          <div>
+            <div
+              style={{
+                fontSize: 15,
+                fontWeight: 700,
+                color: "#0f172a",
+              }}
+            >
+              Rate Card (Popular Items)
+            </div>
+            <div
+              style={{
+                fontSize: 11,
+                color: "#6b7280",
+                marginTop: 2,
+              }}
+            >
+              Per-piece steam ironing – simple, transparent pricing.
             </div>
           </div>
-          <div>
-            📞 Contact:{" "}
-            <a
-              href="tel:+919902717676"
-              style={{ color: "white", fontWeight: 600, textDecoration: "none" }}
-            >
-              +91 9902717676
-            </a>
+          <div
+            style={{
+              minWidth: 36,
+              minHeight: 36,
+              borderRadius: 999,
+              background:
+                "radial-gradient(circle at 30% 20%, #38bdf8, #1d4ed8)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "white",
+              fontSize: 18,
+            }}
+          >
+            🧺
           </div>
+        </div>
+
+        {/* 2 × 5 thumbnails */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: 8,
+            fontSize: 12,
+            color: "#111827",
+          }}
+        >
+          {/* 1. Shirt / Pant */}
+          <RateTile
+            icon="👕"
+            iconBg="#e0f2fe"
+            title="Shirt / Pant"
+            subtitle="₹10 per piece"
+          />
+
+          {/* 2. Kurti / Top */}
+          <RateTile
+            icon="👚"
+            iconBg="#fef3c7"
+            title="Kurti / Top"
+            subtitle="₹10 per piece"
+          />
+
+          {/* 3. Kids wear */}
+          <RateTile
+            icon="🧒"
+            iconBg="#fee2e2"
+            title="Kids wear (below 5)"
+            subtitle="₹8 per piece"
+          />
+
+          {/* 4. Cushion / Towel */}
+          <RateTile
+            icon="🧻"
+            iconBg="#e5e7eb"
+            title="Cushion / Small towel"
+            subtitle="₹5 per piece"
+          />
+
+          {/* 5. Bedsheet Single */}
+          <RateTile
+            icon="🛏️"
+            iconBg="#dcfce7"
+            title="Bedsheet (Single)"
+            subtitle="₹30 per piece"
+          />
+
+          {/* 6. Bedsheet Double */}
+          <RateTile
+            icon="🛏️"
+            iconBg="#bfdbfe"
+            title="Bedsheet (Double)"
+            subtitle="₹45 per piece"
+          />
+
+          {/* 7. Simple Saree */}
+          <RateTile
+            icon="🥻"
+            iconBg="#f3e8ff"
+            title="Simple Saree"
+            subtitle="₹45 per piece"
+          />
+
+          {/* 8. Heavy / Silk Saree */}
+          <RateTile
+            icon="🥻"
+            iconBg="#fee2e2"
+            title="Heavy / Silk Saree"
+            subtitle="₹60 per piece"
+          />
+
+          {/* 9. Coat / Blazer */}
+          <RateTile
+            icon="🧥"
+            iconBg="#e0f2fe"
+            title="Coat / Blazer"
+            subtitle="₹50 per piece"
+          />
+
+          {/* 10. Jacket */}
+          <RateTile
+            icon="🧥"
+            iconBg="#d1fae5"
+            title="Jacket"
+            subtitle="₹50 per piece"
+          />
+        </div>
+
+        <div
+          style={{
+            fontSize: 11,
+            color: "#6b7280",
+            marginTop: 4,
+          }}
+        >
+          * Detailed rate card (including other items) is available at the shop.
         </div>
       </div>
 
+            {/* Free pickup note */}
       <div
         style={{
-          borderRadius: 16,
-          border: "1px solid #e5e7eb",
-          padding: 14,
-          backgroundColor: "#f9fafb",
-          fontSize: 12,
-          color: "#4b5563",
+          textAlign: "center",
+          fontWeight: 700,
+          fontSize: 15,
+          color: "#0f172a",
         }}
       >
-        <p style={{ marginBottom: 4 }}>
-          ✅ Same-day pickup slots:{" "}
-          <strong>Morning (9:00 AM – 11:00 AM)</strong> or{" "}
-          <strong>Evening (5:00 PM – 7:00 PM)</strong>
-        </p>
-        <p style={{ marginBottom: 4 }}>
-          ✅ Express delivery (within 4 hours): <strong>+₹25</strong>
-        </p>
-        <p style={{ marginBottom: 4 }}>
-          ✅ Choose <strong>doorstep pickup & delivery</strong> or{" "}
-          <strong>self drop & pickup from shop</strong>.
-        </p>
-        <p style={{ marginBottom: 0 }}>
-          ✅ For doorstep, orders below <strong>₹200</strong> have a{" "}
-          <strong>₹15 delivery charge</strong>; orders{" "}
-          <strong>₹200+</strong> get <strong>free pickup & delivery</strong>.
-        </p>
+        Free Pickup & Drop — No Minimum Order
       </div>
 
+
+      {/* Buttons */}
       <div
         style={{
           display: "grid",
@@ -250,28 +337,29 @@ function HomeScreen(props: {
           onClick={props.onBookClick}
           style={{
             borderRadius: 999,
-            padding: "10px 12px",
             border: "none",
+            padding: "14px 0",
+            fontSize: 15,
+            fontWeight: 700,
+            cursor: "pointer",
             background:
               "linear-gradient(135deg, #f97316 0%, #ea580c 40%, #7c2d12 100%)",
             color: "white",
-            fontSize: 14,
-            fontWeight: 700,
-            cursor: "pointer",
           }}
         >
           Book New
         </button>
+
         <button
           type="button"
           onClick={props.onOrdersClick}
           style={{
             borderRadius: 999,
-            padding: "10px 12px",
-            border: "1px solid #d1d5db",
-            backgroundColor: "white",
-            color: "#111827",
-            fontSize: 14,
+            padding: "14px 0",
+            border: "1px solid #e2e8f0",
+            backgroundColor: "#fff",
+            color: "#1e293b",
+            fontSize: 15,
             fontWeight: 600,
             cursor: "pointer",
           }}
@@ -283,13 +371,54 @@ function HomeScreen(props: {
   );
 }
 
+/* Small helper component inside the same file */
+function RateTile(props: {
+  icon: string;
+  iconBg: string;
+  title: string;
+  subtitle: string;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        gap: 8,
+        alignItems: "center",
+      }}
+    >
+      <div
+        style={{
+          width: 28,
+          height: 28,
+          borderRadius: 999,
+          backgroundColor: props.iconBg,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: 16,
+        }}
+      >
+        {props.icon}
+      </div>
+      <div>
+        <div style={{ fontWeight: 600 }}>{props.title}</div>
+        <div style={{ fontSize: 11, color: "#6b7280" }}>
+          {props.subtitle}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+
+
 /* ---------- BOOKING FORM ---------- */
 
 function BookingForm(props: {
   onBack: () => void;
   onConfirm: (message: string) => void;
 }) {
-
   const earliestPickupDate = getEarliestPickupDateISO();
 
   const [customerName, setCustomerName] = useState("");
@@ -300,8 +429,6 @@ function BookingForm(props: {
   const [pickupDate, setPickupDate] = useState(earliestPickupDate);
   const [pickupSlotId, setPickupSlotId] = useState<string>("MORNING");
   const [itemsText, setItemsText] = useState("");
-  const [expressDelivery, setExpressDelivery] = useState(false);
-  const [selfDrop, setSelfDrop] = useState(false);
   const [message, setMessage] = useState("");
 
   const [useEstimator, setUseEstimator] = useState(false);
@@ -313,11 +440,11 @@ function BookingForm(props: {
     hour: 0,
   });
 
-  // NEW: dynamic societies + loading state
+  // Dynamic societies + loading state
   const [societies, setSocieties] = useState<string[]>([]);
   const [loadingSocieties, setLoadingSocieties] = useState(false);
 
-  // NEW: prevent double-submit
+  // Prevent double-submit
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -347,7 +474,7 @@ function BookingForm(props: {
     }
   }, []);
 
-  // NEW: load societies from Supabase via /api/societies
+  // Load societies from Supabase via /api/societies
   useEffect(() => {
     const loadSocieties = async () => {
       try {
@@ -402,7 +529,7 @@ function BookingForm(props: {
     setMessage("");
     try {
       const res = await fetch(
-        `/api/customer?phone=${encodeURIComponent(phone.trim())}`
+        `/api/customer?phone=${encodeURIComponent(phone.trim())}`,
       );
       const data = await res.json();
 
@@ -448,12 +575,9 @@ function BookingForm(props: {
 
     const itemsTotal = PRICE_ITEMS.reduce(
       (sum, item) => sum + (quantities[item.id] || 0) * item.price,
-      0
+      0,
     );
-    const expressAmount = expressDelivery ? 25 : 0;
-    const deliveryCharge =
-      !selfDrop && itemsTotal > 0 && itemsTotal < 200 ? 15 : 0;
-    const estimatedTotal = itemsTotal + expressAmount + deliveryCharge;
+    const estimatedTotal = itemsTotal;
 
     // Combine block + flat number for now (backend only has flat_number)
     const combinedFlat =
@@ -473,12 +597,12 @@ function BookingForm(props: {
           flat_number: combinedFlat,
           pickup_date: pickupDate,
           pickup_slot: selectedSlot.timeRange,
-          express_delivery: expressDelivery,
-          self_drop: selfDrop,
+          express_delivery: false,
+          self_drop: false,
           notes: itemsText.trim() || null,
           items_estimated_total: itemsTotal || null,
-          delivery_charge: deliveryCharge || null,
-          express_charge: expressAmount || null,
+          delivery_charge: null,
+          express_charge: null,
           estimated_total: estimatedTotal || null,
         }),
       });
@@ -498,21 +622,17 @@ function BookingForm(props: {
         body: JSON.stringify({ name: finalSociety }),
       });
 
-            saveUserInfo();
+      saveUserInfo();
 
-      const baseMsg = selfDrop
-        ? `Thank you! Your drop is booked for ${pickupDate} in the ${selectedSlot.label.toLowerCase()} slot (${selectedSlot.timeRange}). Please drop and collect your clothes from the shop.`
-        : `Thank you! Your pickup is booked for ${pickupDate} in the ${selectedSlot.label.toLowerCase()} slot (${selectedSlot.timeRange}).`;
+      const baseMsg = `Thank you! Your pickup is booked for ${pickupDate} in the ${selectedSlot.label.toLowerCase()} slot (${selectedSlot.timeRange}).`;
 
       // Show black confirmation page with this text
       props.onConfirm(baseMsg);
 
       // Reset local fields for next booking
       setItemsText("");
-      setExpressDelivery(false);
       setUseEstimator(false);
       setQuantities({});
-
     } catch (err) {
       console.error("Request error:", err);
       setMessage("Something went wrong. Please try again.");
@@ -533,12 +653,9 @@ function BookingForm(props: {
 
   const itemsTotal = PRICE_ITEMS.reduce(
     (sum, item) => sum + (quantities[item.id] || 0) * item.price,
-    0
+    0,
   );
-  const expressAmount = expressDelivery ? 25 : 0;
-  const deliveryCharge =
-    !selfDrop && itemsTotal > 0 && itemsTotal < 200 ? 15 : 0;
-  const estimatedTotal = itemsTotal + expressAmount + deliveryCharge;
+  const estimatedTotal = itemsTotal;
 
   return (
     <div style={{ display: "grid", gap: 12 }}>
@@ -728,9 +845,7 @@ function BookingForm(props: {
                     />
                     <span>
                       <strong>{slot.label}</strong>{" "}
-                      <span style={{ color: "#6b7280" }}>
-                        {slot.timeRange}
-                      </span>
+                      <span style={{ color: "#6b7280" }}>{slot.timeRange}</span>
                       {disabled && (
                         <span
                           style={{
@@ -752,66 +867,6 @@ function BookingForm(props: {
             </div>
           </div>
         </div>
-
-        {/* Pickup method */}
-        <div>
-          <label style={labelStyle}>Pickup / Drop method</label>
-          <div
-            style={{
-              display: "grid",
-              gap: 6,
-              fontSize: 13,
-              color: "#111827",
-            }}
-          >
-            <label
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-              }}
-            >
-              <input
-                type="radio"
-                name="pickupMethod"
-                checked={!selfDrop}
-                onChange={() => setSelfDrop(false)}
-              />
-              <span>Doorstep pickup & delivery</span>
-            </label>
-            <label
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-              }}
-            >
-              <input
-                type="radio"
-                name="pickupMethod"
-                checked={selfDrop}
-                onChange={() => setSelfDrop(true)}
-              />
-              <span>
-                I&apos;ll drop & pickup from shop{" "}
-                <span style={{ color: "#16a34a", fontWeight: 600 }}>
-                  (no delivery charges)
-                </span>
-              </span>
-            </label>
-          </div>
-        </div>
-
-        <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <input
-            type="checkbox"
-            checked={expressDelivery}
-            onChange={(e) => setExpressDelivery(e.target.checked)}
-          />
-          <span style={{ fontSize: 13, color: "#111827" }}>
-            Express Delivery (within 4 hours) +₹25
-          </span>
-        </label>
 
         {/* Optional estimator toggle */}
         <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -877,9 +932,7 @@ function BookingForm(props: {
                       min={0}
                       inputMode="numeric"
                       value={qty === 0 ? "" : qty}
-                      onChange={(e) =>
-                        handleQtyChange(item.id, e.target.value)
-                      }
+                      onChange={(e) => handleQtyChange(item.id, e.target.value)}
                       style={{
                         width: 70,
                         borderRadius: 8,
@@ -908,12 +961,6 @@ function BookingForm(props: {
                 Items total:{" "}
                 <span style={{ fontWeight: 600 }}>₹{itemsTotal}</span>
               </div>
-              {expressDelivery && <div>+ Express delivery: ₹25</div>}
-              {!selfDrop && deliveryCharge > 0 && (
-                <div>
-                  + Delivery charge (doorstep order below ₹200): ₹15
-                </div>
-              )}
               <div style={{ marginTop: 4 }}>
                 Estimated total:{" "}
                 <span
@@ -985,51 +1032,10 @@ function BookingForm(props: {
           {message}
         </div>
       )}
-
-      <div
-        style={{
-          marginTop: 16,
-          paddingTop: 12,
-          borderTop: "1px solid #e5e7eb",
-          fontSize: 11,
-          color: "#4b5563",
-        }}
-      >
-        <p style={{ fontWeight: 600, marginBottom: 4 }}>Important notes</p>
-        <ul style={{ paddingLeft: 18, margin: 0 }}>
-          <li>Payment is always Cash on Delivery (COD).</li>
-          <li>
-            For doorstep pickup, orders below ₹200: ₹15 extra pickup &
-            delivery charge.
-          </li>
-          <li>
-            Orders ₹200 and above (doorstep): free pickup & delivery. Self
-            drop & pickup from shop has no delivery charges.
-          </li>
-          <li>Express Delivery (within 4 hours): +₹25.</li>
-        </ul>
-
-        <p
-          style={{
-            fontWeight: 600,
-            marginBottom: 4,
-            marginTop: 10,
-          }}
-        >
-          Rate card (summary)
-        </p>
-        <ul style={{ paddingLeft: 18, margin: 0 }}>
-          <li>Shirt / Trousers / T-Shirt / Jeans – ₹10</li>
-          <li>Kurti / Kurta / Pajama – ₹10</li>
-          <li>Bedsheet (Single) – ₹30 · (Double) – ₹45</li>
-          <li>Saree (Simple) – ₹45 · (Heavy/Silk) – ₹60</li>
-          <li>Lehenga / Designer Dress – ₹60</li>
-          <li>Coat / Blazer – ₹50</li>
-        </ul>
-      </div>
     </div>
   );
 }
+
 
 function BookingConfirmation(props: {
   message: string;
@@ -1127,7 +1133,6 @@ function BookingConfirmation(props: {
   );
 }
 
-
 /* ---------- MY ORDERS (real view) ---------- */
 
 type OrderStatus = "NEW" | "PICKED" | "DELIVERED";
@@ -1179,7 +1184,7 @@ function MyOrders(props: { onBack: () => void }) {
     setLoading(true);
     try {
       const res = await fetch(
-        `/api/my-orders?phone=${encodeURIComponent(phone.trim())}`
+        `/api/my-orders?phone=${encodeURIComponent(phone.trim())}`,
       );
       const data = await res.json();
 
@@ -1393,8 +1398,7 @@ function MyOrders(props: { onBack: () => void }) {
                     </>
                   ) : o.estimated_total != null ? (
                     <>
-                      Estimated amount:{" "}
-                      <strong>₹{o.estimated_total}</strong>{" "}
+                      Estimated amount: <strong>₹{o.estimated_total}</strong>{" "}
                       <span style={{ color: "#6b7280" }}>
                         (final amount after ironing)
                       </span>
