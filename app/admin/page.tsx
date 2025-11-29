@@ -35,6 +35,41 @@ type AdminTab = "ORDERS" | "PICKUP" | "DASHBOARD";
 const WORKERS = ["Anil", "Sikandar"];
 const DISCOUNT_OPTIONS = [0, 5, 10, 20];
 
+const ITEM_PRICES: Record<string, { label: string; price: number }> = {
+  shirt_pant_kurta_top: {
+    label: "Shirt / Pant / Kurta / Top",
+    price: 10,
+  },
+  kids_wear: {
+    label: "Kids wear (below 5)",
+    price: 8,
+  },
+  cushion_towel: {
+    label: "Cushion cover / small towel",
+    price: 5,
+  },
+  bedsheet_single: {
+    label: "Bedsheet single",
+    price: 30,
+  },
+  bedsheet_double: {
+    label: "Bedsheet double",
+    price: 45,
+  },
+  saree_simple: {
+    label: "Simple saree",
+    price: 45,
+  },
+  saree_heavy: {
+    label: "Heavy / Silk saree",
+    price: 60,
+  },
+  coat_jacket: {
+    label: "Coat / Blazer / Jacket",
+    price: 50,
+  },
+};
+
 interface Summary {
   from: string;
   to: string;
@@ -337,18 +372,17 @@ export default function AdminPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-  customer_name: "Walk-in customer",
-  phone: newPhone || "",
-  society_name: newSociety,
-  flat_number: newCustomerName || "Walk-in",
-  pickup_date: date,
-  pickup_slot: "Self drop",
-  express_delivery: newExpress,
-  self_drop: true,
-  status: "PICKED",
-  notes: null,
-}),
-
+          customer_name: "Walk-in customer",
+          phone: newPhone || "",
+          society_name: newSociety,
+          flat_number: newCustomerName || "Walk-in",
+          pickup_date: date,
+          pickup_slot: "Self drop",
+          express_delivery: newExpress,
+          self_drop: true,
+          status: "PICKED",
+          notes: null,
+        }),
       });
 
       const data = await res.json();
@@ -611,21 +645,20 @@ export default function AdminPage() {
               </div>
             </div>
             <div
-  style={{
-    display: "grid",
-    gridTemplateColumns: "1fr", // single column – better on mobile
-    gap: 8,
-    fontSize: 12,
-  }}
->
-
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr",
+                gap: 8,
+                fontSize: 12,
+              }}
+            >
               <div>
                 <label style={filterLabelStyle}>Flat number</label>
                 <input
                   type="text"
                   value={newCustomerName}
                   onChange={(e) => setNewCustomerName(e.target.value)}
-                  placeholder="Walk-in customer"
+                  placeholder="G-7, B-203, etc."
                   style={filterInputStyle}
                 />
               </div>
@@ -1327,6 +1360,49 @@ function OrdersView(props: {
     Record<string, { base: string; discount: number }>
   >({});
 
+  // Item quantities per order
+  const [itemState, setItemState] = useState<
+    Record<string, Record<string, string>>
+  >({});
+
+  const getItemTotal = (
+    id: string,
+    state: Record<string, Record<string, string>>
+  ): number => {
+    const items = state[id];
+    if (!items) return 0;
+    let sum = 0;
+    for (const key of Object.keys(items)) {
+      const qtyStr = items[key];
+      if (!qtyStr) continue;
+      const qty = parseInt(qtyStr, 10);
+      if (!qty || qty <= 0) continue;
+      const def = ITEM_PRICES[key];
+      if (!def) continue;
+      sum += qty * def.price;
+    }
+    return sum;
+  };
+
+  const buildItemsSummary = (id: string): string => {
+    const items = itemState[id];
+    if (!items) return "";
+    const lines: string[] = [];
+    for (const key of Object.keys(items)) {
+      const qtyStr = items[key];
+      if (!qtyStr) continue;
+      const qty = parseInt(qtyStr, 10);
+      if (!qty || qty <= 0) continue;
+      const def = ITEM_PRICES[key];
+      if (!def) continue;
+      const lineTotal = qty * def.price;
+      lines.push(
+        `${def.label}: ${qty} × ₹${def.price} = ₹${lineTotal}`
+      );
+    }
+    return lines.join("\n");
+  };
+
   const handleBaseChange = (id: string, raw: string) => {
     const cleaned = raw.replace(/\D/g, "");
     setBillingState((prev) => {
@@ -1351,14 +1427,42 @@ function OrdersView(props: {
       };
     });
 
-    const total = computeFinalTotal(id, order, billingState, discount);
+    const total = computeFinalTotal(
+      id,
+      order,
+      billingState,
+      itemState,
+      discount
+    );
     if (total !== null) {
       void onTotalUpdate(id, total);
     }
   };
 
   const handleBaseBlur = (id: string, order: Order) => {
-    const total = computeFinalTotal(id, order, billingState);
+    const total = computeFinalTotal(id, order, billingState, itemState);
+    if (total !== null) {
+      void onTotalUpdate(id, total);
+    }
+  };
+
+  const handleItemQtyChange = (
+    id: string,
+    order: Order,
+    itemKey: string,
+    raw: string
+  ) => {
+    const cleaned = raw.replace(/\D/g, "");
+    const nextState: Record<string, Record<string, string>> = {
+      ...itemState,
+      [id]: {
+        ...(itemState[id] || {}),
+        [itemKey]: cleaned,
+      },
+    };
+    setItemState(nextState);
+
+    const total = computeFinalTotal(id, order, billingState, nextState);
     if (total !== null) {
       void onTotalUpdate(id, total);
     }
@@ -1368,15 +1472,25 @@ function OrdersView(props: {
     id: string,
     order: Order,
     state: Record<string, { base: string; discount: number }>,
+    itemsState: Record<string, Record<string, string>>,
     overrideDiscount?: number
   ): number | null => {
     const entry = state[id] || { base: "", discount: 0 };
     const baseStr = entry.base;
     const discount = overrideDiscount ?? entry.discount ?? 0;
 
-    if (!baseStr) return null;
-    const baseNum = parseInt(baseStr, 10);
-    if (Number.isNaN(baseNum) || baseNum <= 0) return null;
+    const itemTotal = getItemTotal(id, itemsState);
+
+    let baseNum = 0;
+    if (itemTotal > 0) {
+      baseNum = itemTotal;
+    } else if (baseStr) {
+      const parsed = parseInt(baseStr, 10);
+      if (Number.isNaN(parsed) || parsed <= 0) return null;
+      baseNum = parsed;
+    } else {
+      return null;
+    }
 
     const pickupCharge =
       !order.self_drop && baseNum > 0 && baseNum < 200 ? 15 : 0;
@@ -1453,6 +1567,8 @@ function OrdersView(props: {
               onDiscountChange={handleDiscountChange}
               onStatusChange={onStatusChange}
               onWorkerChange={onWorkerChange}
+              itemItems={itemState[order.id]}
+              onItemQtyChange={handleItemQtyChange}
             />
           ))}
         </div>
@@ -1499,8 +1615,16 @@ function OrdersView(props: {
                   const baseStr = entry.base;
                   const discount = entry.discount ?? 0;
 
-                  const baseNum =
-                    baseStr.trim() === "" ? 0 : parseInt(baseStr, 10);
+                  const itemTotal = getItemTotal(order.id, itemState);
+
+                  let baseNum = 0;
+                  if (itemTotal > 0) {
+                    baseNum = itemTotal;
+                  } else if (baseStr.trim() !== "") {
+                    const parsed = parseInt(baseStr, 10);
+                    baseNum = Number.isNaN(parsed) ? 0 : parsed;
+                  }
+
                   const pickupCharge =
                     !order.self_drop && baseNum > 0 && baseNum < 200
                       ? 15
@@ -1508,7 +1632,7 @@ function OrdersView(props: {
                   const expressCharge = order.express_delivery ? 25 : 0;
                   const subtotal = baseNum + pickupCharge + expressCharge;
                   const finalCalculated =
-                    baseStr.trim() === ""
+                    baseNum === 0
                       ? null
                       : Math.round(subtotal * (1 - discount / 100));
 
@@ -1521,6 +1645,8 @@ function OrdersView(props: {
                     !!order.phone &&
                     effectiveTotal !== null &&
                     (order.status === "READY" || order.status === "DELIVERED");
+
+                  const itemsSummary = buildItemsSummary(order.id);
 
                   return (
                     <tr
@@ -1653,6 +1779,12 @@ function OrdersView(props: {
                             fontSize: 11,
                           }}
                         >
+                          <ItemCalculator
+                            order={order}
+                            items={itemState[order.id]}
+                            onQtyChange={handleItemQtyChange}
+                          />
+
                           <div>
                             <span>Base amount: </span>
                             <input
@@ -1676,6 +1808,17 @@ function OrdersView(props: {
                                 padding: "4px 6px",
                               }}
                             />
+                            {itemTotal > 0 && (
+                              <div
+                                style={{
+                                  marginTop: 2,
+                                  fontSize: 10,
+                                  color: "#9ca3af",
+                                }}
+                              >
+                                Items total: ₹{itemTotal} (auto)
+                              </div>
+                            )}
                           </div>
                           <div>
                             <span>Discount: </span>
@@ -1730,7 +1873,12 @@ function OrdersView(props: {
                             disabled={!canWhatsApp}
                             onClick={() => {
                               if (!effectiveTotal) return;
-                              openWhatsApp(order, effectiveTotal, discount);
+                              openWhatsApp(
+                                order,
+                                effectiveTotal,
+                                discount,
+                                itemsSummary || undefined
+                              );
                             }}
                             style={{
                               marginTop: 4,
@@ -1762,6 +1910,113 @@ function OrdersView(props: {
   );
 }
 
+/* ---------- ITEM CALCULATOR (shared) ---------- */
+
+function ItemCalculator(props: {
+  order: Order;
+  items: Record<string, string> | undefined;
+  onQtyChange: (
+    orderId: string,
+    order: Order,
+    itemKey: string,
+    raw: string
+  ) => void;
+}) {
+  const { order, items, onQtyChange } = props;
+  const [open, setOpen] = useState(false);
+  const currentItems = items || {};
+
+  let total = 0;
+  for (const key of Object.keys(ITEM_PRICES)) {
+    const qtyStr = currentItems[key];
+    if (!qtyStr) continue;
+    const qty = parseInt(qtyStr, 10);
+    if (!qty || qty <= 0) continue;
+    total += qty * ITEM_PRICES[key].price;
+  }
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((x) => !x)}
+        style={{
+          width: "100%",
+          borderRadius: 999,
+          border: "1px solid #374151",
+          padding: "4px 8px",
+          fontSize: 11,
+          fontWeight: 600,
+          backgroundColor: "#020617",
+          color: "#e5e7eb",
+          cursor: "pointer",
+        }}
+      >
+        {open ? "Hide items" : "Add items"}{" "}
+        {total > 0 ? ` (₹${total})` : ""}
+      </button>
+      {open && (
+        <div
+          style={{
+            marginTop: 6,
+            paddingTop: 6,
+            borderTop: "1px dashed #1f2937",
+            display: "grid",
+            gap: 4,
+            fontSize: 11,
+          }}
+        >
+          {Object.entries(ITEM_PRICES).map(([key, def]) => {
+            const qty = currentItems[key] || "";
+            return (
+              <div
+                key={key}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: 8,
+                  alignItems: "center",
+                }}
+              >
+                <div>
+                  <div>{def.label}</div>
+                  <div
+                    style={{
+                      fontSize: 10,
+                      color: "#9ca3af",
+                    }}
+                  >
+                    ₹{def.price} per piece
+                  </div>
+                </div>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={qty}
+                  onChange={(e) =>
+                    onQtyChange(order.id, order, key, e.target.value)
+                  }
+                  placeholder="0"
+                  style={{
+                    width: 56,
+                    borderRadius: 6,
+                    border: "1px solid #374151",
+                    backgroundColor: "#020617",
+                    color: "#e5e7eb",
+                    fontSize: 11,
+                    padding: "4px 6px",
+                    textAlign: "right",
+                  }}
+                />
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ---------- MOBILE ORDER CARD ---------- */
 
 function OrderCard(props: {
@@ -1773,6 +2028,13 @@ function OrderCard(props: {
   onDiscountChange: (id: string, discount: number, order: Order) => void;
   onStatusChange: (id: string, status: OrderStatus) => void;
   onWorkerChange: (id: string, worker: string | null) => void;
+  itemItems?: Record<string, string>;
+  onItemQtyChange: (
+    orderId: string,
+    order: Order,
+    itemKey: string,
+    raw: string
+  ) => void;
 }) {
   const {
     order,
@@ -1783,21 +2045,38 @@ function OrderCard(props: {
     onDiscountChange,
     onStatusChange,
     onWorkerChange,
+    itemItems,
+    onItemQtyChange,
   } = props;
 
   const entry = billingState[order.id] || { base: "", discount: 0 };
   const baseStr = entry.base;
   const discount = entry.discount ?? 0;
 
-  const baseNum = baseStr.trim() === "" ? 0 : parseInt(baseStr, 10);
+  const itemsForOrder = itemItems || {};
+  let itemTotal = 0;
+  for (const key of Object.keys(ITEM_PRICES)) {
+    const qtyStr = itemsForOrder[key];
+    if (!qtyStr) continue;
+    const qty = parseInt(qtyStr, 10);
+    if (!qty || qty <= 0) continue;
+    itemTotal += qty * ITEM_PRICES[key].price;
+  }
+
+  let baseNum = 0;
+  if (itemTotal > 0) {
+    baseNum = itemTotal;
+  } else if (baseStr.trim() !== "") {
+    const parsed = parseInt(baseStr, 10);
+    baseNum = Number.isNaN(parsed) ? 0 : parsed;
+  }
+
   const pickupCharge =
     !order.self_drop && baseNum > 0 && baseNum < 200 ? 15 : 0;
   const expressCharge = order.express_delivery ? 25 : 0;
   const subtotal = baseNum + pickupCharge + expressCharge;
   const finalCalculated =
-    baseStr.trim() === ""
-      ? null
-      : Math.round(subtotal * (1 - discount / 100));
+    baseNum === 0 ? null : Math.round(subtotal * (1 - discount / 100));
 
   const effectiveTotal =
     finalCalculated !== null ? finalCalculated : order.total_price ?? null;
@@ -1806,6 +2085,23 @@ function OrderCard(props: {
     !!order.phone &&
     effectiveTotal !== null &&
     (order.status === "READY" || order.status === "DELIVERED");
+
+  const buildItemsSummary = (): string => {
+    const lines: string[] = [];
+    for (const key of Object.keys(itemsForOrder)) {
+      const qtyStr = itemsForOrder[key];
+      if (!qtyStr) continue;
+      const qty = parseInt(qtyStr, 10);
+      if (!qty || qty <= 0) continue;
+      const def = ITEM_PRICES[key];
+      if (!def) continue;
+      const lineTotal = qty * def.price;
+      lines.push(
+        `${def.label}: ${qty} × ₹${def.price} = ₹${lineTotal}`
+      );
+    }
+    return lines.join("\n");
+  };
 
   return (
     <div
@@ -1953,6 +2249,12 @@ function OrderCard(props: {
           fontSize: 11,
         }}
       >
+        <ItemCalculator
+          order={order}
+          items={itemsForOrder}
+          onQtyChange={onItemQtyChange}
+        />
+
         <div>
           <div style={{ marginBottom: 2 }}>Base amount</div>
           <input
@@ -1972,6 +2274,17 @@ function OrderCard(props: {
               padding: "4px 6px",
             }}
           />
+          {itemTotal > 0 && (
+            <div
+              style={{
+                marginTop: 2,
+                fontSize: 10,
+                color: "#9ca3af",
+              }}
+            >
+              Items total: ₹{itemTotal} (auto)
+            </div>
+          )}
         </div>
         <div>
           <div style={{ marginBottom: 2 }}>Discount</div>
@@ -2018,7 +2331,13 @@ function OrderCard(props: {
           disabled={!canWhatsApp}
           onClick={() => {
             if (!effectiveTotal) return;
-            openWhatsApp(order, effectiveTotal, discount);
+            const summary = buildItemsSummary();
+            openWhatsApp(
+              order,
+              effectiveTotal,
+              discount,
+              summary || undefined
+            );
           }}
           style={{
             marginTop: 4,
@@ -2092,7 +2411,12 @@ function normalisePhoneForWhatsApp(raw: string): string | null {
   return digits;
 }
 
-function openWhatsApp(order: Order, total: number, discountPercent: number) {
+function openWhatsApp(
+  order: Order,
+  total: number,
+  discountPercent: number,
+  itemsText?: string
+) {
   if (typeof window === "undefined") return;
   const phone = normalisePhoneForWhatsApp(order.phone);
   if (!phone) return;
@@ -2132,14 +2456,18 @@ function openWhatsApp(order: Order, total: number, discountPercent: number) {
 
   const paymentLine = `Total amount: ₹${total}.\nYou can pay via UPI to shukla354@okicici.\nPay easily using any UPI app (GPay, PhonePe, Paytm, BHIM etc.):\n${upiLink}`;
 
+  const itemsSection =
+    itemsText && itemsText.trim().length > 0
+      ? `\nItems:\n${itemsText}\n`
+      : "";
+
   const thanksLine = "Thank you for choosing us!";
 
-  const text = `Hi ${order.customer_name || ""},\n${statusLine}\n${discountLine}${paymentLine}\n\nFlat: ${order.flat_number}, ${order.society_name}\n${thanksLine}`;
+  const text = `Hi ${order.customer_name || ""},\n${statusLine}\n${discountLine}${paymentLine}${itemsSection}\nFlat: ${order.flat_number}, ${order.society_name}\n${thanksLine}`;
 
   const url = `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
   window.open(url, "_blank");
 }
-
 
 // calculate Monday–Sunday week around a date
 function getWeekRange(dateStr: string): { from: string; to: string } {
