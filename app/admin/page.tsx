@@ -55,6 +55,13 @@ export default function AdminPage() {
   const [savingMap, setSavingMap] = useState<Record<string, boolean>>({});
   const [isMobile, setIsMobile] = useState(false);
 
+  // Walk-in order state
+  const [newCustomerName, setNewCustomerName] = useState("");
+  const [newPhone, setNewPhone] = useState("");
+  const [newSociety, setNewSociety] = useState("");
+  const [newExpress, setNewExpress] = useState(false);
+  const [creatingWalkIn, setCreatingWalkIn] = useState(false);
+
   // Dashboard state
   const [weekSummary, setWeekSummary] = useState<Summary | null>(null);
   const [monthSummary, setMonthSummary] = useState<Summary | null>(null);
@@ -312,7 +319,60 @@ export default function AdminPage() {
     handleStatusChange(id, "PICKED");
   }
 
-    const societies = Array.from(
+  async function handleCreateWalkInOrder() {
+    if (!date) {
+      setError("Please select a pickup date first.");
+      return;
+    }
+    if (!newSociety) {
+      setError("Please select a society for the walk-in order.");
+      return;
+    }
+
+    setCreatingWalkIn(true);
+    setError("");
+
+    try {
+      const res = await fetch("/api/admin/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customer_name: newCustomerName || "Walk-in customer",
+          phone: newPhone || "",
+          society_name: newSociety,
+          flat_number: "Walk-in",
+          pickup_date: date,
+          pickup_slot: "Self drop",
+          express_delivery: newExpress,
+          self_drop: true,
+          status: "PICKED",
+          notes: null,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        console.error("Create order error:", data);
+        setError(data.error || "Failed to create walk-in order");
+        return;
+      }
+
+      const created: Order = data.order;
+      setOrders((prev) => [created, ...prev]);
+
+      setNewCustomerName("");
+      setNewPhone("");
+      setNewSociety("");
+      setNewExpress(false);
+    } catch (err) {
+      console.error("Create order request error:", err);
+      setError("Unexpected error while creating walk-in order");
+    } finally {
+      setCreatingWalkIn(false);
+    }
+  }
+
+  const societies = Array.from(
     new Set(orders.map((o) => o.society_name))
   ).sort();
 
@@ -352,8 +412,6 @@ export default function AdminPage() {
   const pickupOrders = sortedOrders.filter(
     (o) => o.status === "NEW" && !o.self_drop
   );
-
-
 
   return (
     <main
@@ -501,14 +559,147 @@ export default function AdminPage() {
               }}
             >
               <div style={pillStyle}>
-  Orders:{" "}
-  <span style={{ fontWeight: 700 }}>{ordersForStats.length}</span>
-</div>
+                Orders:{" "}
+                <span style={{ fontWeight: 700 }}>{ordersForStats.length}</span>
+              </div>
 
               <div style={pillStyle}>
                 Revenue (this date):{" "}
                 <span style={{ fontWeight: 700 }}>₹{totalRevenue}</span>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* Walk-in order form (Orders tab only) */}
+        {activeTab === "ORDERS" && (
+          <div
+            style={{
+              marginBottom: 12,
+              borderRadius: 12,
+              border: "1px solid #1f2937",
+              padding: 10,
+              background:
+                "radial-gradient(circle at top left, #4f46e533, #020617)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 8,
+                alignItems: "center",
+                marginBottom: 8,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 12,
+                  fontWeight: 600,
+                }}
+              >
+                Add walk-in order
+              </div>
+              <div
+                style={{
+                  fontSize: 11,
+                  color: "#9ca3af",
+                }}
+              >
+                For customers who directly come to the shop.
+              </div>
+            </div>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+                gap: 8,
+                fontSize: 12,
+              }}
+            >
+              <div>
+                <label style={filterLabelStyle}>Customer name (optional)</label>
+                <input
+                  type="text"
+                  value={newCustomerName}
+                  onChange={(e) => setNewCustomerName(e.target.value)}
+                  placeholder="Walk-in customer"
+                  style={filterInputStyle}
+                />
+              </div>
+              <div>
+                <label style={filterLabelStyle}>Phone number</label>
+                <input
+                  type="tel"
+                  value={newPhone}
+                  onChange={(e) => setNewPhone(e.target.value)}
+                  placeholder="10-digit mobile"
+                  style={filterInputStyle}
+                />
+              </div>
+              <div>
+                <label style={filterLabelStyle}>Society</label>
+                <select
+                  value={newSociety}
+                  onChange={(e) => setNewSociety(e.target.value)}
+                  style={filterInputStyle}
+                >
+                  <option value="">Select society</option>
+                  {societies.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  marginTop: 20,
+                }}
+              >
+                <input
+                  id="walkin-express"
+                  type="checkbox"
+                  checked={newExpress}
+                  onChange={(e) => setNewExpress(e.target.checked)}
+                />
+                <label
+                  htmlFor="walkin-express"
+                  style={{ fontSize: 12, cursor: "pointer" }}
+                >
+                  Express order
+                </label>
+              </div>
+            </div>
+            <div
+              style={{
+                marginTop: 8,
+                display: "flex",
+                justifyContent: "flex-end",
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => void handleCreateWalkInOrder()}
+                disabled={creatingWalkIn}
+                style={{
+                  borderRadius: 999,
+                  border: "none",
+                  padding: "6px 12px",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: creatingWalkIn ? "not-allowed" : "pointer",
+                  background:
+                    "linear-gradient(to right, #22c55e, #16a34a, #15803d)",
+                  color: "#022c22",
+                  opacity: creatingWalkIn ? 0.6 : 1,
+                }}
+              >
+                {creatingWalkIn ? "Adding…" : "Add walk-in order"}
+              </button>
             </div>
           </div>
         )}
@@ -751,7 +942,7 @@ function SummaryCard({
           >
             {summary.from} → {summary.to}
           </div>
-                    <div
+          <div
             style={{
               display: "flex",
               gap: 12,
@@ -1537,7 +1728,7 @@ function OrdersView(props: {
                             disabled={!canWhatsApp}
                             onClick={() => {
                               if (!effectiveTotal) return;
-                              openWhatsApp(order, effectiveTotal);
+                              openWhatsApp(order, effectiveTotal, discount);
                             }}
                             style={{
                               marginTop: 4,
@@ -1825,7 +2016,7 @@ function OrderCard(props: {
           disabled={!canWhatsApp}
           onClick={() => {
             if (!effectiveTotal) return;
-            openWhatsApp(order, effectiveTotal);
+            openWhatsApp(order, effectiveTotal, discount);
           }}
           style={{
             marginTop: 4,
@@ -1899,19 +2090,42 @@ function normalisePhoneForWhatsApp(raw: string): string | null {
   return digits;
 }
 
-function openWhatsApp(order: Order, total: number) {
+function openWhatsApp(order: Order, total: number, discountPercent: number) {
   if (typeof window === "undefined") return;
   const phone = normalisePhoneForWhatsApp(order.phone);
   if (!phone) return;
 
   const isReady = order.status === "READY";
-  const line1 = isReady
-    ? `Your ironing order from ${order.society_name} (${order.flat_number}) is READY.`
-    : `Your ironing order from ${order.society_name} (${order.flat_number}) is DELIVERED.`;
-  const line2 = `Total amount: ₹${total}.`;
-  const line3 = "Thank you for choosing us";
+  const isDelivered = order.status === "DELIVERED";
 
-  const text = `Hi ${order.customer_name},\n${line1}\n${line2}\n${line3}`;
+  let statusLine: string;
+  if (isReady) {
+    if (order.self_drop) {
+      // Customer dropped at shop
+      statusLine =
+        "Your ironing order is READY for pickup at the shop.";
+    } else {
+      // We picked from customer
+      statusLine =
+        "Your ironing order is READY. We will deliver it to your flat shortly.";
+    }
+  } else if (isDelivered) {
+    statusLine =
+      "Your ironing order has been DELIVERED. Hope you are happy with the service.";
+  } else {
+    statusLine = "Your ironing order update.";
+  }
+
+  const discountLine =
+    discountPercent && discountPercent > 0
+      ? `Discount applied: ${discountPercent}%.\n`
+      : "";
+
+  const paymentLine = `Total amount: ₹${total}.\nYou can pay via UPI to shukla354@okicici.`;
+  const thanksLine = "Thank you for choosing us!";
+
+  const text = `Hi ${order.customer_name || ""},\n${statusLine}\n${discountLine}${paymentLine}\n\nFlat: ${order.flat_number}, ${order.society_name}\n${thanksLine}`;
+
   const url = `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
   window.open(url, "_blank");
 }
