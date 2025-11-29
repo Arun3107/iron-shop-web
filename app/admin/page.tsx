@@ -32,7 +32,7 @@ interface Order {
   items_json?: Record<string, number> | null;
 }
 
-type AdminTab = "ORDERS" | "PICKUP" | "DASHBOARD";
+type AdminTab = "ORDERS" | "PICKUP" | "DASHBOARD" | "SIMPLE";
 
 const WORKERS = ["Anil", "Sikandar"];
 const DISCOUNT_OPTIONS = [0, 5, 10, 20];
@@ -570,6 +570,24 @@ export default function AdminPage() {
           >
             Dashboard
           </button>
+            <button
+    type="button"
+    onClick={() => setActiveTab("SIMPLE")}
+    style={{
+      border: "none",
+      padding: "6px 12px",
+      borderRadius: 999,
+      fontSize: 12,
+      fontWeight: 600,
+      cursor: "pointer",
+      backgroundColor:
+        activeTab === "SIMPLE" ? "#111827" : "transparent",
+      color: activeTab === "SIMPLE" ? "#e5e7eb" : "#9ca3af",
+    }}
+  >
+    Simple
+  </button>
+
         </div>
 
         {/* Filters + quick summary – shown on Orders & Pickup */}
@@ -782,39 +800,46 @@ export default function AdminPage() {
         )}
 
         {activeTab === "DASHBOARD" ? (
-          <DashboardView
-            weekSummary={weekSummary}
-            monthSummary={monthSummary}
-            rangeSummary={rangeSummary}
-            rangeFrom={rangeFrom}
-            rangeTo={rangeTo}
-            setRangeFrom={setRangeFrom}
-            setRangeTo={setRangeTo}
-            summaryLoading={summaryLoading}
-            onRangeRefresh={handleRangeRefresh}
-            onQuickRange={handleQuickRange}
-          />
-        ) : activeTab === "PICKUP" ? (
-          <PickupView
-            isMobile={isMobile}
-            loading={loading}
-            pickupOrders={pickupOrders}
-            savingMap={savingMap}
-            onPickupConfirm={handlePickupConfirm}
-          />
-        ) : (
-          <OrdersView
-            isMobile={isMobile}
-            loading={loading}
-            sortedOrders={pendingOrders}
-            savingBulk={savingBulk}
-            savingMap={savingMap}
-            onMarkAllNewAsPicked={markAllNewAsPicked}
-            onStatusChange={handleStatusChange}
-            onWorkerChange={handleWorkerChange}
-            onTotalUpdate={handleTotalUpdate}
-          />
-        )}
+  <DashboardView
+    weekSummary={weekSummary}
+    monthSummary={monthSummary}
+    rangeSummary={rangeSummary}
+    rangeFrom={rangeFrom}
+    rangeTo={rangeTo}
+    setRangeFrom={setRangeFrom}
+    setRangeTo={setRangeTo}
+    summaryLoading={summaryLoading}
+    onRangeRefresh={handleRangeRefresh}
+    onQuickRange={handleQuickRange}
+  />
+) : activeTab === "PICKUP" ? (
+  <PickupView
+    isMobile={isMobile}
+    loading={loading}
+    pickupOrders={pickupOrders}
+    savingMap={savingMap}
+    onPickupConfirm={handlePickupConfirm}
+  />
+) : activeTab === "ORDERS" ? (
+  <OrdersView
+    isMobile={isMobile}
+    loading={loading}
+    sortedOrders={pendingOrders}
+    savingBulk={savingBulk}
+    savingMap={savingMap}
+    onMarkAllNewAsPicked={markAllNewAsPicked}
+    onStatusChange={handleStatusChange}
+    onWorkerChange={handleWorkerChange}
+    onTotalUpdate={handleTotalUpdate}
+  />
+) : (
+  <SimpleView
+    isMobile={isMobile}
+    loading={loading}
+    sortedOrders={sortedOrders}
+  />
+)}
+
       </div>
     </main>
   );
@@ -1357,6 +1382,164 @@ function PickupCard(props: {
   );
 }
 
+/* ---------- SIMPLE VIEW ---------- */
+
+function SimpleView(props: {
+  isMobile: boolean;
+  loading: boolean;
+  sortedOrders: Order[];
+}) {
+  const { isMobile, loading, sortedOrders } = props;
+
+  if (loading) {
+    return (
+      <div style={{ fontSize: 13, color: "#9ca3af" }}>
+        Loading orders…
+      </div>
+    );
+  }
+
+  if (sortedOrders.length === 0) {
+    return (
+      <div style={{ fontSize: 13, color: "#9ca3af" }}>
+        No orders for this date (and society).
+      </div>
+    );
+  }
+
+  // Order by status: NEW → PICKED → READY → DELIVERED
+  const statusRank: Record<OrderStatus, number> = {
+    NEW: 0,
+    PICKED: 1,
+    READY: 2,
+    DELIVERED: 3,
+  };
+
+  const ordered = [...sortedOrders].sort((a, b) => {
+    const diff = statusRank[a.status] - statusRank[b.status];
+    if (diff !== 0) return diff;
+    // tie-breaker: earlier orders first
+    return (
+      new Date(a.created_at).getTime() -
+      new Date(b.created_at).getTime()
+    );
+  });
+
+  // Desktop: simple table
+  if (!isMobile) {
+    return (
+      <div
+        style={{
+          marginTop: 4,
+          borderRadius: 12,
+          border: "1px solid #1f2937",
+          overflow: "hidden",
+        }}
+      >
+        <div style={{ overflowX: "auto" }}>
+          <table
+            style={{
+              width: "100%",
+              minWidth: 480,
+              borderCollapse: "collapse",
+              fontSize: 12,
+            }}
+          >
+            <thead
+              style={{
+                background: "linear-gradient(to right, #020617, #111827)",
+                textAlign: "left",
+              }}
+            >
+              <tr>
+                <th style={thStyle}>Flat number</th>
+                <th style={thStyle}>Amount</th>
+                <th style={thStyle}>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ordered.map((order, index) => {
+                const amount = order.total_price ?? null;
+                return (
+                  <tr
+                    key={order.id}
+                    style={{
+                      backgroundColor:
+                        index % 2 === 0 ? "#020617" : "#030712",
+                    }}
+                  >
+                    <td style={tdStyle}>
+                      <div style={{ fontSize: 12, fontWeight: 600 }}>
+                        {order.flat_number}
+                      </div>
+                      <div style={{ fontSize: 11, color: "#9ca3af" }}>
+                        {order.society_name}
+                      </div>
+                    </td>
+                    <td style={tdStyle}>
+                      {amount === null ? "—" : `₹${amount}`}
+                    </td>
+                    <td style={tdStyle}>
+                      <StatusBadge status={order.status} />
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
+
+  // Mobile: simple cards
+  return (
+    <div style={{ display: "grid", gap: 8 }}>
+      {ordered.map((order) => {
+        const amount = order.total_price ?? null;
+        return (
+          <div
+            key={order.id}
+            style={{
+              borderRadius: 12,
+              border: "1px solid #1f2937",
+              padding: 10,
+              background:
+                "radial-gradient(circle at top left, #111827cc, #020617)",
+              fontSize: 12,
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 8,
+                marginBottom: 4,
+              }}
+            >
+              <div>
+                <div style={{ fontWeight: 600 }}>
+                  {order.flat_number}
+                </div>
+                <div style={{ fontSize: 11, color: "#9ca3af" }}>
+                  {order.society_name}
+                </div>
+              </div>
+              <StatusBadge status={order.status} />
+            </div>
+            <div style={{ fontSize: 11, color: "#9ca3af" }}>Amount</div>
+            <div style={{ fontSize: 14, fontWeight: 700 }}>
+              {amount === null ? "—" : `₹${amount}`}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+
+
 /* ---------- ORDERS VIEW ---------- */
 
 type BillingState = Record<string, { base: string; discount: number }>;
@@ -1405,7 +1588,8 @@ function OrdersView(props: {
               typeof o.base_amount === "number" && o.base_amount > 0
                 ? String(o.base_amount)
                 : "",
-            discount: 0,
+                    discount: prev[o.id]?.discount ?? 10,
+
           };
         }
       }
@@ -1475,7 +1659,7 @@ function OrdersView(props: {
     finalTotal: number | null;
     itemsCounts: Record<string, number> | null;
   } => {
-    const billing = billingState[id] || { base: "", discount: 0 };
+    const billing = billingState[id] || { base: "", discount: 10 };
     const baseStr = overrideBase !== undefined ? overrideBase : billing.base;
     const discountPercent =
       overrideDiscount !== undefined ? overrideDiscount : billing.discount;
@@ -1523,7 +1707,7 @@ function OrdersView(props: {
       ...prev,
       [id]: {
         base: value,
-        discount: prev[id]?.discount ?? 0,
+        discount: prev[id]?.discount ?? 10,
       },
     }));
   };
@@ -1697,7 +1881,7 @@ function OrdersView(props: {
                 const saving = savingMap[order.id] ?? false;
                 const billing = billingState[order.id] || {
                   base: "",
-                  discount: 0,
+                  discount: 10,
                 };
                 const itemTotal = getItemTotal(order.id, itemState);
                 const { baseAmount, finalTotal } = computeTotals(
@@ -2003,7 +2187,7 @@ function OrdersView(props: {
       {sortedOrders.map((order) => {
         const billing = billingState[order.id] || {
           base: "",
-          discount: 0,
+          discount: 10,
         };
         const itemTotal = getItemTotal(order.id, itemState);
         const { baseAmount, finalTotal } = computeTotals(order.id, order);
