@@ -415,36 +415,39 @@ const handleItemQtyChange = (
                     }}
                   >
                     <td style={tdStyle}>
-                      <div style={{ fontSize: 12, fontWeight: 600 }}>
-                        {order.society_name}
-                      </div>
-                      <div style={{ fontSize: 11, color: "#9ca3af" }}>
-                        Flat: {order.flat_number}
-                      </div>
-                      <div style={{ fontSize: 11, color: "#9ca3af" }}>
-                        {order.self_drop
-                          ? "Self drop"
-                          : `Pickup: ${order.pickup_slot}`}
-                        {order.express_delivery && (
-                          <span
-                            style={{ color: "#f97316", marginLeft: 4 }}
-                          >
-                            • Express
-                          </span>
-                        )}
-                      </div>
-                      {order.notes && (
-                        <div
-                          style={{
-                            marginTop: 2,
-                            fontSize: 11,
-                            color: "#e5e7eb",
-                          }}
-                        >
-                          Notes: {order.notes}
-                        </div>
-                      )}
-                    </td>
+  <div style={{ fontSize: 12, fontWeight: 600 }}>
+    {order.society_name}
+  </div>
+  <div style={{ fontSize: 11, color: "#9ca3af" }}>
+    {`Flat: ${order.flat_number}${
+      order.block ? `, ${order.block} Block` : ""
+    }`}
+  </div>
+  <div style={{ fontSize: 11, color: "#9ca3af" }}>
+    {order.self_drop
+      ? "Self drop"
+      : `Pickup: ${order.pickup_slot}`}
+    {order.express_delivery && (
+      <span
+        style={{ color: "#f97316", marginLeft: 4 }}
+      >
+        • Express
+      </span>
+    )}
+  </div>
+  {order.notes && (
+    <div
+      style={{
+        marginTop: 2,
+        fontSize: 11,
+        color: "#e5e7eb",
+      }}
+    >
+      Notes: {order.notes}
+    </div>
+  )}
+</td>
+
 
                     <td style={tdStyle}>
                       <ItemCalculator
@@ -687,32 +690,35 @@ function OrderCard(props: {
         }}
       >
         <div>
-          <div style={{ fontSize: 13, fontWeight: 600 }}>
-            {order.society_name}
-          </div>
-          <div style={{ fontSize: 11, color: "#9ca3af" }}>
-            Flat: {order.flat_number}
-          </div>
-          <div style={{ fontSize: 11, color: "#9ca3af" }}>
-            {order.self_drop ? "Self drop" : `Pickup: ${order.pickup_slot}`}
-            {order.express_delivery && (
-              <span style={{ color: "#f97316", marginLeft: 4 }}>
-                • Express
-              </span>
-            )}
-          </div>
-          {order.notes && (
-            <div
-              style={{
-                marginTop: 2,
-                fontSize: 11,
-                color: "#e5e7eb",
-              }}
-            >
-              Notes: {order.notes}
-            </div>
-          )}
-        </div>
+  <div style={{ fontSize: 13, fontWeight: 600 }}>
+    {order.society_name}
+  </div>
+  <div style={{ fontSize: 11, color: "#9ca3af" }}>
+    {`Flat: ${order.flat_number}${
+      order.block ? `, ${order.block} Block` : ""
+    }`}
+  </div>
+  <div style={{ fontSize: 11, color: "#9ca3af" }}>
+    {order.self_drop ? "Self drop" : `Pickup: ${order.pickup_slot}`}
+    {order.express_delivery && (
+      <span style={{ color: "#f97316", marginLeft: 4 }}>
+        • Express
+      </span>
+    )}
+  </div>
+  {order.notes && (
+    <div
+      style={{
+        marginTop: 2,
+        fontSize: 11,
+        color: "#e5e7eb",
+      }}
+    >
+      Notes: {order.notes}
+    </div>
+  )}
+</div>
+
         <div
           style={{
             fontSize: 10,
@@ -899,9 +905,9 @@ function ItemsModal(props: {
         onChange(key, "");
         return;
       }
-      if (/^\d+$/.test(v)) {
-        onChange(key, v);
-      }
+      // allow only digits
+      const cleaned = v.replace(/[^0-9]/g, "");
+      onChange(key, cleaned);
     };
 
   const getValuePair = (key: string) => {
@@ -925,9 +931,8 @@ function ItemsModal(props: {
     >
       <div
         style={{
-          width: "90%",
-          maxWidth: 480,
-          height: "90%",
+          width: "94%",
+          maxWidth: 520,
           maxHeight: "90vh",
           borderRadius: 16,
           border: "1px solid #1f2937",
@@ -938,21 +943,22 @@ function ItemsModal(props: {
           boxShadow: "0 20px 45px rgba(0,0,0,0.7)",
         }}
       >
+        {/* Header */}
         <div
           style={{
             display: "flex",
             justifyContent: "space-between",
             gap: 8,
             alignItems: "center",
-            marginBottom: 8,
+            marginBottom: 10,
           }}
         >
           <div>
-            <div style={{ fontSize: 13, fontWeight: 600 }}>
-              Edit items
-            </div>
-            <div style={{ fontSize: 11, color: "#9ca3af" }}>
-              {order.society_name} • Flat {order.flat_number}
+            <div style={{ fontSize: 14, fontWeight: 700 }}>Edit items</div>
+            <div style={{ fontSize: 12, color: "#9ca3af" }}>
+              {`${order.society_name} • Flat ${order.flat_number}${
+                order.block ? `, ${order.block} Block` : ""
+              }`}
             </div>
           </div>
           <button
@@ -961,8 +967,8 @@ function ItemsModal(props: {
             style={{
               borderRadius: 999,
               border: "1px solid #374151",
-              padding: "4px 8px",
-              fontSize: 11,
+              padding: "4px 10px",
+              fontSize: 12,
               backgroundColor: "#020617",
               color: "#9ca3af",
               cursor: "pointer",
@@ -972,11 +978,12 @@ function ItemsModal(props: {
           </button>
         </div>
 
+        {/* Items list */}
         <div
           style={{
             flex: 1,
             overflowY: "auto",
-            padding: 4,
+            padding: 6,
             borderRadius: 10,
             border: "1px solid #111827",
             backgroundColor: "#030712",
@@ -986,32 +993,42 @@ function ItemsModal(props: {
             style={{
               display: "grid",
               gridTemplateColumns: "1fr",
-              gap: 8,
-              fontSize: 11,
+              gap: 10,
+              fontSize: 13, // bigger text
             }}
           >
             {ITEM_GROUPS.map((group) => (
-              <div key={group.title}>
+              <div
+                key={group.title}
+                style={{
+                  padding: "8px 10px",
+                  borderRadius: 8,
+                  backgroundColor: "#020617",
+                }}
+              >
+                {/* group header */}
                 <div
                   style={{
-                    fontSize: 12,
-                    fontWeight: 600,
-                    marginBottom: 4,
+                    fontSize: 14,
+                    fontWeight: 700,
+                    marginBottom: 6,
                     color: "#e5e7eb",
+                    borderBottom: "1px solid #1f2937",
+                    paddingBottom: 4,
                   }}
                 >
                   {group.title}
                 </div>
+
                 <div
                   style={{
                     display: "grid",
                     gridTemplateColumns: "1fr",
-                    gap: 6,
+                    gap: 8,
                   }}
                 >
                   {group.keys.map((key) => {
                     const def = ITEM_PRICES_MAP[key];
-
                     if (!def) return null;
 
                     const { raw, num } = getValuePair(key);
@@ -1026,6 +1043,12 @@ function ItemsModal(props: {
                       onChange(key, String(next));
                     };
 
+                    // special label change
+                    const label =
+                      key === "women_kurti_top"
+                        ? "Kurti / Top / Dupatta"
+                        : def.label;
+
                     return (
                       <div
                         key={key}
@@ -1037,7 +1060,7 @@ function ItemsModal(props: {
                         }}
                       >
                         <span>
-                          {def.label}
+                          {label}
                           <span style={{ color: "#9ca3af" }}>
                             {" "}
                             — ₹{def.price}
@@ -1047,20 +1070,20 @@ function ItemsModal(props: {
                           style={{
                             display: "flex",
                             alignItems: "center",
-                            gap: 4,
+                            gap: 6,
                           }}
                         >
                           <button
                             type="button"
                             onClick={decrement}
                             style={{
-                              width: 24,
-                              height: 24,
+                              width: 26,
+                              height: 26,
                               borderRadius: 999,
                               border: "1px solid #374151",
                               backgroundColor: "#020617",
                               color: "#e5e7eb",
-                              fontSize: 14,
+                              fontSize: 16,
                               lineHeight: 1,
                               cursor: "pointer",
                             }}
@@ -1073,13 +1096,13 @@ function ItemsModal(props: {
                             onChange={handleTypedChange(key)}
                             inputMode="numeric"
                             style={{
-                              width: 44,
+                              width: 54,
                               borderRadius: 999,
                               border: "1px solid #374151",
                               backgroundColor: "#020617",
                               color: "#e5e7eb",
-                              padding: "2px 4px",
-                              fontSize: 12,
+                              padding: "4px 6px",
+                              fontSize: 13,
                               textAlign: "center",
                             }}
                           />
@@ -1087,13 +1110,13 @@ function ItemsModal(props: {
                             type="button"
                             onClick={increment}
                             style={{
-                              width: 24,
-                              height: 24,
+                              width: 26,
+                              height: 26,
                               borderRadius: 999,
                               border: "1px solid #374151",
                               backgroundColor: "#020617",
                               color: "#e5e7eb",
-                              fontSize: 14,
+                              fontSize: 16,
                               lineHeight: 1,
                               cursor: "pointer",
                             }}
@@ -1110,28 +1133,53 @@ function ItemsModal(props: {
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={onSave}
+        {/* Footer buttons */}
+        <div
           style={{
             marginTop: 10,
-            borderRadius: 999,
-            border: "none",
-            padding: "8px 12px",
-            fontSize: 12,
-            fontWeight: 600,
-            cursor: "pointer",
-            background:
-              "linear-gradient(to right, #22c55e, #16a34a, #15803d)",
-            color: "#022c22",
+            display: "flex",
+            justifyContent: "flex-end",
+            gap: 8,
           }}
         >
-          Save items
-        </button>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{
+              borderRadius: 999,
+              border: "1px solid #374151",
+              padding: "6px 12px",
+              fontSize: 12,
+              backgroundColor: "#020617",
+              color: "#9ca3af",
+              cursor: "pointer",
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onSave}
+            style={{
+              borderRadius: 999,
+              border: "none",
+              padding: "6px 14px",
+              fontSize: 12,
+              fontWeight: 600,
+              background:
+                "linear-gradient(to right, #4ade80, #22c55e)",
+              color: "#022c22",
+              cursor: "pointer",
+            }}
+          >
+            Save items
+          </button>
+        </div>
       </div>
     </div>
   );
 }
+
 
 function ItemCalculator(props: {
   orderId: string;

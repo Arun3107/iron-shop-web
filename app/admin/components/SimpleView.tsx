@@ -19,23 +19,53 @@ type OrderWithPhone = Order & {
   mobile?: string;
 };
 
+type OrderWithBlock = Order & {
+  block?: string | null;
+};
 
-// Try to pull a phone number from the order (field name may vary)
 // Try to pull a phone number from the order (field name may vary)
 function getOrderPhone(order: Order): string | null {
   const o = order as OrderWithPhone;
   return o.phone ?? o.phone_number ?? o.mobile ?? null;
 }
 
+function getOrderBlock(order: Order): string {
+  const o = order as OrderWithBlock;
+  return (o.block ?? "").toString().trim();
+}
 
 function buildWhatsappMessage(order: Order): string {
   const amount = order.total_price ?? 0;
+  const block = getOrderBlock(order);
+  const flatLine = block
+    ? `Block ${block}, Flat ${order.flat_number}`
+    : `Flat ${order.flat_number}`;
+
   return (
     `Hi! Your ironing order is READY.\n` +
-    `Flat: ${order.flat_number}, ${order.society_name}.\n` +
+    `${flatLine}, ${order.society_name}.\n` +
     `Total amount: ₹${amount}.\n` +
     `Thank you!`
   );
+}
+
+// Block ordering A → G for PSR Aster
+const BLOCK_PRIORITY: Record<string, number> = {
+  A: 0,
+  B: 1,
+  C: 2,
+  D: 3,
+  E: 4,
+  F: 5,
+  G: 6,
+};
+
+function getBlockSortKey(order: Order): number {
+  const raw = getOrderBlock(order).toUpperCase();
+  if (!raw) return 999; // unknown / unset block at the end
+  const letter = raw[0]; // "A", "B", etc.
+  const rank = BLOCK_PRIORITY[letter];
+  return rank === undefined ? 999 : rank;
 }
 
 export default function SimpleView({
@@ -63,11 +93,25 @@ export default function SimpleView({
     );
   }
 
-  const ordered = [...readyOrders].sort(
-    (a, b) =>
+  // Sort:
+  // - For PSR Aster: by Block (A → G), then by created_at (FIFO inside each block)
+  // - For other societies: by created_at (FIFO)
+  const ordered = [...readyOrders].sort((a, b) => {
+    const aIsPSR = a.society_name === "PSR Aster";
+    const bIsPSR = b.society_name === "PSR Aster";
+
+    // If both are PSR Aster, sort by block first
+    if (aIsPSR && bIsPSR) {
+      const blockDiff = getBlockSortKey(a) - getBlockSortKey(b);
+      if (blockDiff !== 0) return blockDiff;
+    }
+
+    // Fallback: FIFO by created_at
+    return (
       new Date(a.created_at).getTime() -
       new Date(b.created_at).getTime()
-  );
+    );
+  });
 
   const openWhatsApp = (order: Order) => {
     const phone = getOrderPhone(order);
@@ -127,6 +171,11 @@ export default function SimpleView({
             <tbody>
               {ordered.map((order, index) => {
                 const amount = order.total_price ?? null;
+                const block = getOrderBlock(order);
+                const flatLine = block
+                  ? `Block ${block} · Flat ${order.flat_number}`
+                  : `Flat ${order.flat_number}`;
+
                 return (
                   <tr
                     key={order.id}
@@ -137,7 +186,7 @@ export default function SimpleView({
                   >
                     <td style={tdStyle}>
                       <div style={{ fontSize: 12, fontWeight: 600 }}>
-                        Flat {order.flat_number}
+                        {flatLine}
                       </div>
                       <div style={{ fontSize: 11, color: "#9ca3af" }}>
                         {order.society_name}
@@ -207,6 +256,11 @@ export default function SimpleView({
     <div style={{ display: "grid", gap: 8 }}>
       {ordered.map((order) => {
         const amount = order.total_price ?? null;
+        const block = getOrderBlock(order);
+        const flatLine = block
+          ? `Block ${block} · Flat ${order.flat_number}`
+          : `Flat ${order.flat_number}`;
+
         return (
           <div
             key={order.id}
@@ -228,9 +282,7 @@ export default function SimpleView({
               }}
             >
               <div>
-                <div style={{ fontWeight: 600 }}>
-                  Flat {order.flat_number}
-                </div>
+                <div style={{ fontWeight: 600 }}>{flatLine}</div>
                 <div style={{ fontSize: 11, color: "#9ca3af" }}>
                   {order.society_name}
                 </div>
@@ -239,7 +291,9 @@ export default function SimpleView({
             </div>
 
             <div style={{ fontSize: 11, color: "#9ca3af" }}>Amount</div>
-            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>
+            <div
+              style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}
+            >
               {amount === null ? "—" : `₹${amount}`}
             </div>
 

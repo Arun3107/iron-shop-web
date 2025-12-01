@@ -1,3 +1,4 @@
+// app/api/admin/orders/route.ts
 import { NextResponse } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
@@ -14,44 +15,9 @@ if (supabaseUrl && supabaseServiceRole) {
   );
 }
 
-type OrderStatus = "NEW" | "PICKED" | "READY" | "DELIVERED";
-
-interface OrderRow {
-  id: string;
-  created_at: string;
-  customer_name: string;
-  phone: string;
-  society_name: string;
-  flat_number: string;
-  pickup_date: string;
-  pickup_slot: string;
-  express_delivery: boolean;
-  self_drop: boolean;
-  notes: string | null;
-  items_estimated_total: number | null;
-  delivery_charge: number | null;
-  express_charge: number | null;
-  estimated_total: number | null;
-  status: OrderStatus;
-  total_price: number | null;
-  worker_name?: string | null;
-  base_amount?: number | null;
-  items_json?: Record<string, number> | null;
-}
-
-
-interface Summary {
-  from: string;
-  to: string;
-  totalOrders: number;
-  totalRevenue: number;
-  statusCounts: Record<OrderStatus, number>;
-  revenueByWorker: Record<string, number>;
-}
-
-// GET /api/admin/orders
-// - ?date=YYYY-MM-DD          -> list orders for that pickup_date
-// - ?summary=1&from=..&to=..  -> summary across a date range
+// -------------------- GET /api/admin/orders --------------------
+// Returns all orders, optionally filtered by pickup_date (?date=YYYY-MM-DD)
+// Your admin UI currently calls: /api/admin/orders?date=ALL
 export async function GET(request: Request) {
   if (!supabase) {
     return NextResponse.json(
@@ -62,122 +28,31 @@ export async function GET(request: Request) {
 
   try {
     const { searchParams } = new URL(request.url);
-    const summaryFlag = searchParams.get("summary");
-    const from = searchParams.get("from");
-    const to = searchParams.get("to");
+    const date = searchParams.get("date") || "ALL";
 
-    // Summary mode (dashboard)
-    if (summaryFlag && (from || to)) {
-      if (!from || !to) {
-        return NextResponse.json(
-          { error: "Both 'from' and 'to' must be provided for summary" },
-          { status: 400 }
-        );
-      }
+    let query = supabase
+      .from("orders")
+      .select("*")
+      .order("created_at", { ascending: true });
 
-      const { data, error } = await supabase
-        .from("orders")
-        .select("id, pickup_date, status, total_price, worker_name")
-        .gte("pickup_date", from)
-        .lte("pickup_date", to);
-
-      if (error) {
-        console.error("Supabase summary query error:", error);
-        return NextResponse.json(
-          { error: "Failed to load summary" },
-          { status: 500 }
-        );
-      }
-
-      const rows = (data || []) as OrderRow[];
-
-      const statusCounts: Record<OrderStatus, number> = {
-        NEW: 0,
-        PICKED: 0,
-        READY: 0,
-        DELIVERED: 0,
-      };
-
-      const revenueByWorker: Record<string, number> = {};
-
-      let totalOrders = 0;
-      let totalRevenue = 0;
-
-      for (const row of rows) {
-        totalOrders += 1;
-
-        const price = row.total_price ?? 0;
-        totalRevenue += price;
-
-        const st = row.status;
-        if (statusCounts[st] !== undefined) {
-          statusCounts[st] += 1;
-        }
-
-        const worker = row.worker_name;
-        if (worker) {
-          revenueByWorker[worker] = (revenueByWorker[worker] || 0) + price;
-        }
-      }
-
-      const summary: Summary = {
-        from,
-        to,
-        totalOrders,
-        totalRevenue,
-        statusCounts,
-        revenueByWorker,
-      };
-
-      return NextResponse.json({ summary });
+    if (date !== "ALL") {
+      // date is expected to be YYYY-MM-DD
+      query = query.eq("pickup_date", date);
     }
 
-    // Non-summary: list orders for a single date OR ALL dates
-const date = searchParams.get("date");
-if (!date) {
-  return NextResponse.json(
-    { error: "Missing 'date' query parameter" },
-    { status: 400 }
-  );
-}
-
-// date = ALL → return everything
-if (date === "ALL") {
-  const { data, error } = await supabase
-    .from("orders")
-    .select("*")
-    .order("created_at", { ascending: true });
-
-  if (error) {
-    console.error("Supabase ALL orders query error:", error);
-    return NextResponse.json(
-      { error: "Failed to load orders" },
-      { status: 500 }
-    );
-  }
-
-  return NextResponse.json({ orders: data || [] });
-}
-
-// Otherwise: return orders for a specific pickup_date
-const { data, error } = await supabase
-  .from("orders")
-  .select("*")
-  .eq("pickup_date", date)
-  .order("created_at", { ascending: true });
-
+    const { data, error } = await query;
 
     if (error) {
-      console.error("Supabase orders query error:", error);
+      console.error("Admin GET /api/admin/orders error:", error);
       return NextResponse.json(
         { error: "Failed to load orders" },
         { status: 500 }
       );
     }
 
-    return NextResponse.json({ orders: data || [] });
+    return NextResponse.json({ orders: data ?? [] });
   } catch (err) {
-    console.error("Admin GET /api/admin/orders error:", err);
+    console.error("Admin GET /api/admin/orders unexpected error:", err);
     return NextResponse.json(
       { error: "Unexpected error while loading orders" },
       { status: 500 }
@@ -185,8 +60,9 @@ const { data, error } = await supabase
   }
 }
 
-// POST /api/admin/orders
-// Used by admin to create walk-in orders from the Orders tab
+// -------------------- POST /api/admin/orders --------------------
+// Used by Admin Walk-in tab to create a new order.
+// Also upserts customer row in `customers` using phone as the unique key.
 export async function POST(request: Request) {
   if (!supabase) {
     return NextResponse.json(
@@ -206,52 +82,80 @@ export async function POST(request: Request) {
       pickup_date,
       pickup_slot,
       express_delivery,
-      self_drop,
-      status,
       notes,
-    } = body ?? {};
+      status,
+      self_drop,
+      block,
+    } = body;
 
-    if (!society_name || !pickup_date) {
+    if (
+      !customer_name ||
+      !phone ||
+      !society_name ||
+      !flat_number ||
+      !pickup_date ||
+      !pickup_slot
+    ) {
       return NextResponse.json(
-        { error: "society_name and pickup_date are required" },
+        { error: "Missing required fields for order creation" },
         { status: 400 }
       );
     }
 
-    const insertPayload = {
-      customer_name: customer_name || "Walk-in customer",
-      phone: phone || "",
-      society_name,
-      flat_number: flat_number || "Walk-in",
-      pickup_date,
-      pickup_slot: pickup_slot || "Self drop",
-      express_delivery: !!express_delivery,
-      self_drop: self_drop ?? true,
-      notes: notes ?? null,
-      items_estimated_total: null,
-      delivery_charge: null,
-      express_charge: null,
-      estimated_total: null,
-      status: (status as OrderStatus) ?? "PICKED",
-      total_price: null,
-      worker_name: null,
-    };
+    // 1) Upsert into customers using phone as the unique key
+    const { error: customerError } = await supabase
+      .from("customers")
+      .upsert(
+        {
+          customer_name,
+          phone,
+          society_name,
+          flat_number,
+          block: block ?? null,
+        },
+        {
+          onConflict: "phone", // uses customers_phone_key
+        }
+      );
 
-    const { data, error } = await supabase
+    if (customerError) {
+      console.error("Admin POST /api/admin/orders customer upsert error:", customerError);
+      return NextResponse.json(
+        { error: "Failed to upsert customer" },
+        { status: 500 }
+      );
+    }
+
+    // 2) Insert the order, including block
+    const { data, error: orderError } = await supabase
       .from("orders")
-      .insert(insertPayload)
-      .select("*")
+      .insert([
+        {
+          customer_name,
+          phone,
+          society_name,
+          flat_number,
+          pickup_date,
+          pickup_slot,
+          express_delivery: !!express_delivery,
+          notes: notes ?? null,
+          status: status ?? "NEW",
+          self_drop: !!self_drop,
+          block: block ?? null,
+        },
+      ])
+      .select()
       .single();
 
-    if (error) {
-      console.error("Supabase insert order error:", error);
+    if (orderError) {
+      console.error("Admin POST /api/admin/orders order insert error:", orderError);
       return NextResponse.json(
         { error: "Failed to create order" },
         { status: 500 }
       );
     }
 
-    return NextResponse.json({ order: data });
+    return NextResponse.json({ order: data }, { status: 201 });
   } catch (err) {
     console.error("Admin POST /api/admin/orders error:", err);
     return NextResponse.json(
@@ -261,9 +165,9 @@ export async function POST(request: Request) {
   }
 }
 
-// PATCH /api/admin/orders
-// - single order: { id, status?, worker_name?, total_price? }
-// - bulk status: { ids: string[], status: OrderStatus }
+// -------------------- PATCH /api/admin/orders --------------------
+// - Single update: { id, status?, worker_name?, total_price?, base_amount?, items_json? }
+// - Bulk status:   { ids: string[], status }
 export async function PATCH(request: Request) {
   if (!supabase) {
     return NextResponse.json(
@@ -275,92 +179,77 @@ export async function PATCH(request: Request) {
   try {
     const body = await request.json();
 
-    // Bulk update: { ids: string[], status: "PICKED" | other statuses }
-    if (Array.isArray(body?.ids) && body.ids.length > 0 && body.status) {
-      const ids = body.ids as string[];
-      const status = body.status as OrderStatus;
-
-      const { data, error } = await supabase
+    // Bulk status update: { ids: string[], status }
+    if (Array.isArray(body.ids) && body.ids.length > 0 && body.status) {
+      const { error } = await supabase
         .from("orders")
-        .update({ status })
-        .in("id", ids)
-        .select("*");
+        .update({ status: body.status as string })
+        .in("id", body.ids);
 
       if (error) {
-        console.error("Supabase bulk update error:", error);
+        console.error("Admin PATCH /api/admin/orders bulk update error:", error);
         return NextResponse.json(
           { error: "Failed to update orders" },
           { status: 500 }
         );
       }
 
-      return NextResponse.json({ orders: data || [] });
+      return NextResponse.json({ success: true });
     }
 
-    // Single order partial update
-if (body?.id) {
-  const patch: Partial<
-    Pick<
-      OrderRow,
-      "status" | "worker_name" | "total_price" | "base_amount" | "items_json"
-    >
-  > = {};
+    // Single row update: { id, status?, worker_name?, total_price?, base_amount?, items_json? }
+    const { id, status, worker_name, total_price, base_amount, items_json } =
+      body ?? {};
 
-
-      if (typeof body.status === "string") {
-        patch.status = body.status as OrderStatus;
-      }
-      if (typeof body.worker_name === "string" || body.worker_name === null) {
-        patch.worker_name = body.worker_name;
-      }
-      if (
-        typeof body.total_price === "number" ||
-        body.total_price === null
-      ) {
-        patch.total_price = body.total_price;
-      }
-
-      if (
-  typeof body.base_amount === "number" ||
-  body.base_amount === null
-) {
-  patch.base_amount = body.base_amount;
-}
-if (body.items_json && typeof body.items_json === "object") {
-  patch.items_json = body.items_json as Record<string, number>;
-}
-
-
-      if (Object.keys(patch).length === 0) {
-        return NextResponse.json(
-          { error: "No valid fields to update" },
-          { status: 400 }
-        );
-      }
-
-      const { data, error } = await supabase
-        .from("orders")
-        .update(patch)
-        .eq("id", body.id)
-        .select("*")
-        .single();
-
-      if (error) {
-        console.error("Supabase update error:", error);
-        return NextResponse.json(
-          { error: "Failed to update order" },
-          { status: 500 }
-        );
-      }
-
-      return NextResponse.json({ order: data });
+    if (!id) {
+      return NextResponse.json(
+        { error: "Missing order id for update" },
+        { status: 400 }
+      );
     }
 
-    // If body doesn't match any expected shape
-    return NextResponse.json(
-      { error: "Invalid PATCH payload" },
-      { status: 400 }
-    );
+    const patch: Record<string, unknown> = {};
+
+    if (typeof status === "string") {
+      patch.status = status;
+    }
+    if (typeof worker_name === "string" || worker_name === null) {
+      patch.worker_name = worker_name;
+    }
+    if (typeof total_price === "number" || total_price === null) {
+      patch.total_price = total_price;
+    }
+    if (typeof base_amount === "number" || base_amount === null) {
+      patch.base_amount = base_amount;
+    }
+    if (items_json && typeof items_json === "object") {
+      // always send an object to jsonb column
+      patch.items_json = items_json;
+    }
+
+    if (Object.keys(patch).length === 0) {
+      return NextResponse.json(
+        { error: "No valid fields to update" },
+        { status: 400 }
+      );
+    }
+
+    const { data, error } = await supabase
+      .from("orders")
+      .update(patch)
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Admin PATCH /api/admin/orders update error:", error);
+      return NextResponse.json(
+        { error: "Failed to update order" },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ order: data });
   } catch (err) {
     console.error("Admin PATCH /api/admin/orders error:", err);
     return NextResponse.json(

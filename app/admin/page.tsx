@@ -21,11 +21,11 @@ export default function AdminPage() {
   const [isMobile, setIsMobile] = useState(false);
 
   // Walk-in order state
-    const [newCustomerName, setNewCustomerName] = useState("");
+  const [newCustomerName, setNewCustomerName] = useState("");
   const [newPhone, setNewPhone] = useState("");
-  const [newSociety, setNewSociety] = useState("");
+  const [newSociety, setNewSociety] = useState("PSR Aster");
+  const [newBlock, setNewBlock] = useState(""); // NEW: block for walk-ins
   const [creatingWalkIn, setCreatingWalkIn] = useState(false);
-
 
   // Set default date = today (used for walk-in orders)
   useEffect(() => {
@@ -128,31 +128,28 @@ export default function AdminPage() {
   }
 
   function handleTotalUpdate(
-  id: string,
-  total: number | null,
-  baseAmount: number | null,
-  itemsCounts: Record<string, number> | null
-) {
-  // If there are no items, send an empty object instead of null
-  // so the backend actually clears old items_json.
-  const sanitizedItems =
-    itemsCounts && Object.keys(itemsCounts).length > 0
-      ? itemsCounts
-      : {};
+    id: string,
+    total: number | null,
+    baseAmount: number | null,
+    itemsCounts: Record<string, number> | null
+  ) {
+    // If there are no items, send an empty object instead of null
+    // so the backend actually clears old items_json.
+    const sanitizedItems =
+      itemsCounts && Object.keys(itemsCounts).length > 0 ? itemsCounts : {};
 
-  const patch: {
-    total_price?: number | null;
-    base_amount?: number | null;
-    items_json?: Record<string, number>; // always send an object
-  } = {
-    total_price: total,
-    base_amount: baseAmount,
-    items_json: sanitizedItems,
-  };
+    const patch: {
+      total_price?: number | null;
+      base_amount?: number | null;
+      items_json?: Record<string, number>; // always send an object
+    } = {
+      total_price: total,
+      base_amount: baseAmount,
+      items_json: sanitizedItems,
+    };
 
-  void saveOrderPartial(id, patch);
-}
-
+    void saveOrderPartial(id, patch);
+  }
 
   async function handlePickupConfirm(id: string) {
     const match = orders.find((o) => o.id === id);
@@ -160,7 +157,7 @@ export default function AdminPage() {
     handleStatusChange(id, "PICKED");
   }
 
-    async function handleCreateWalkInOrder() {
+  async function handleCreateWalkInOrder() {
     if (!date) {
       setError("Please select a pickup date first.");
       return;
@@ -170,6 +167,9 @@ export default function AdminPage() {
       return;
     }
 
+    // Use flat number as both customer_name and flat_number
+    const flatNumber = newCustomerName || "Walk-in";
+
     setCreatingWalkIn(true);
     setError("");
 
@@ -178,16 +178,17 @@ export default function AdminPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          customer_name: "Walk-in customer",
+          customer_name: flatNumber, // <– flat number as name
           phone: newPhone || "",
           society_name: newSociety,
-          flat_number: newCustomerName || "Walk-in",
+          flat_number: flatNumber, // <– flat number as flat_number
           pickup_date: date,
           pickup_slot: "Self drop",
           express_delivery: false, // walk-ins are never express
           self_drop: true,
           status: "PICKED", // walk-in orders start as PICKED
           notes: null,
+          block: newBlock || null, // <– store block on the order
         }),
       });
 
@@ -204,6 +205,7 @@ export default function AdminPage() {
       setNewCustomerName("");
       setNewPhone("");
       setNewSociety("");
+      setNewBlock("");
     } catch (err) {
       console.error("Create order request error:", err);
       setError("Unexpected error while creating walk-in order");
@@ -212,8 +214,9 @@ export default function AdminPage() {
     }
   }
 
-
-  const societies = Array.from(new Set(orders.map((o) => o.society_name))).sort();
+  const societies = Array.from(
+    new Set(orders.map((o) => o.society_name))
+  ).sort();
 
   const filteredOrders =
     societyFilter === "ALL"
@@ -232,8 +235,6 @@ export default function AdminPage() {
   // Orders tab: only show orders that are already picked up (status === "PICKED")
   // Includes walk-ins because they are also status "PICKED".
   const pickedOrders = sortedOrders.filter((o) => o.status === "PICKED");
-
-  const walkInOrders = sortedOrders.filter((o) => o.self_drop);
 
   const pickupOrders = sortedOrders.filter(
     (o) => o.status === "NEW" && !o.self_drop
@@ -285,34 +286,34 @@ export default function AdminPage() {
             paddingBottom: 6,
           }}
         >
-          {(
-            ["ORDERS", "WALKIN", "PICKUP", "READY"] as AdminTab[]
-          ).map((tab) => (
-            <button
-              key={tab}
-              type="button"
-              onClick={() => setActiveTab(tab)}
-              style={{
-                border: "none",
-                padding: "6px 12px",
-                borderRadius: 999,
-                fontSize: 12,
-                fontWeight: 600,
-                cursor: "pointer",
-                backgroundColor:
-                  activeTab === tab ? "#111827" : "transparent",
-                color: activeTab === tab ? "#e5e7eb" : "#9ca3af",
-              }}
-            >
-              {tab === "ORDERS"
-                ? "Orders"
-                : tab === "WALKIN"
-                ? "Walk-in"
-                : tab === "PICKUP"
-                ? "Pickup"
-                : "Ready to deliver"}
-            </button>
-          ))}
+          {(["ORDERS", "WALKIN", "PICKUP", "READY"] as AdminTab[]).map(
+            (tab) => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setActiveTab(tab)}
+                style={{
+                  border: "none",
+                  padding: "6px 12px",
+                  borderRadius: 999,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  backgroundColor:
+                    activeTab === tab ? "#111827" : "transparent",
+                  color: activeTab === tab ? "#e5e7eb" : "#9ca3af",
+                }}
+              >
+                {tab === "ORDERS"
+                  ? "Orders"
+                  : tab === "WALKIN"
+                  ? "Walk-in"
+                  : tab === "PICKUP"
+                  ? "Pickup"
+                  : "Ready to deliver"}
+              </button>
+            )
+          )}
         </div>
 
         {/* Filters */}
@@ -366,15 +367,15 @@ export default function AdminPage() {
             onPickupConfirm={handlePickupConfirm}
           />
         ) : activeTab === "ORDERS" ? (
-  <OrdersView
-    isMobile={isMobile}
-    loading={loading}
-    // Only picked orders (NEW/READY/DELIVERED are hidden here)
-    sortedOrders={pickedOrders}
-    savingMap={savingMap}
-    onStatusChange={handleStatusChange}
-    onTotalUpdate={handleTotalUpdate}
-  />
+          <OrdersView
+            isMobile={isMobile}
+            loading={loading}
+            // Only picked orders (NEW/READY/DELIVERED are hidden here)
+            sortedOrders={pickedOrders}
+            savingMap={savingMap}
+            onStatusChange={handleStatusChange}
+            onTotalUpdate={handleTotalUpdate}
+          />
         ) : activeTab === "WALKIN" ? (
           <WalkInView
             isMobile={isMobile}
@@ -382,13 +383,14 @@ export default function AdminPage() {
             newCustomerName={newCustomerName}
             newPhone={newPhone}
             newSociety={newSociety}
+            newBlock={newBlock} // pass block to WalkInView
             creatingWalkIn={creatingWalkIn}
             setNewCustomerName={setNewCustomerName}
             setNewPhone={setNewPhone}
             setNewSociety={setNewSociety}
+            setNewBlock={setNewBlock} // pass setter
             onCreateWalkIn={handleCreateWalkInOrder}
           />
-
         ) : (
           <SimpleView
             isMobile={isMobile}

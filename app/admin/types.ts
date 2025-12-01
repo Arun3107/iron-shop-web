@@ -9,6 +9,7 @@ export interface Order {
   phone: string;
   society_name: string;
   flat_number: string;
+  block?: string | null;
   pickup_date: string;
   pickup_slot: string;
   express_delivery: boolean;
