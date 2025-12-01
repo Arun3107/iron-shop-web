@@ -132,20 +132,40 @@ export async function GET(request: Request) {
       return NextResponse.json({ summary });
     }
 
-    // Non-summary: list orders for a single date
-    const date = searchParams.get("date");
-    if (!date) {
-      return NextResponse.json(
-        { error: "Missing 'date' query parameter" },
-        { status: 400 }
-      );
-    }
+    // Non-summary: list orders for a single date OR ALL dates
+const date = searchParams.get("date");
+if (!date) {
+  return NextResponse.json(
+    { error: "Missing 'date' query parameter" },
+    { status: 400 }
+  );
+}
 
-    const { data, error } = await supabase
-      .from("orders")
-      .select("*")
-      .eq("pickup_date", date)
-      .order("created_at", { ascending: true });
+// date = ALL → return everything
+if (date === "ALL") {
+  const { data, error } = await supabase
+    .from("orders")
+    .select("*")
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    console.error("Supabase ALL orders query error:", error);
+    return NextResponse.json(
+      { error: "Failed to load orders" },
+      { status: 500 }
+    );
+  }
+
+  return NextResponse.json({ orders: data || [] });
+}
+
+// Otherwise: return orders for a specific pickup_date
+const { data, error } = await supabase
+  .from("orders")
+  .select("*")
+  .eq("pickup_date", date)
+  .order("created_at", { ascending: true });
+
 
     if (error) {
       console.error("Supabase orders query error:", error);
