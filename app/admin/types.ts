@@ -27,6 +27,7 @@ export interface Order {
 }
 
 export type AdminTab =
+  | "DASHBOARD"
   | "ORDERS"
   | "WALKIN"
   | "PICKUP"

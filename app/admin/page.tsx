@@ -9,6 +9,7 @@ import PickupView from "./components/PickupView";
 import SimpleView from "./components/SimpleView";
 import OrdersView from "./components/OrdersView";
 import WalkInView from "./components/WalkInView";
+import DashboardView from "./components/DashboardView";
 
 export default function AdminPage() {
   const [date, setDate] = useState<string>("");
@@ -286,34 +287,38 @@ export default function AdminPage() {
             paddingBottom: 6,
           }}
         >
-          {(["ORDERS", "WALKIN", "PICKUP", "READY"] as AdminTab[]).map(
-            (tab) => (
-              <button
-                key={tab}
-                type="button"
-                onClick={() => setActiveTab(tab)}
-                style={{
-                  border: "none",
-                  padding: "6px 12px",
-                  borderRadius: 999,
-                  fontSize: 12,
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  backgroundColor:
-                    activeTab === tab ? "#111827" : "transparent",
-                  color: activeTab === tab ? "#e5e7eb" : "#9ca3af",
-                }}
-              >
-                {tab === "ORDERS"
-                  ? "Orders"
-                  : tab === "WALKIN"
-                  ? "Walk-in"
-                  : tab === "PICKUP"
-                  ? "Pickup"
-                  : "Ready to deliver"}
-              </button>
-            )
-          )}
+          {(["ORDERS", "WALKIN", "PICKUP", "READY", "DASHBOARD"] as AdminTab[]).map(
+  (tab) => (
+    <button
+      key={tab}
+      type="button"
+      onClick={() => setActiveTab(tab)}
+      style={{
+        border: "none",
+        padding: "6px 12px",
+        borderRadius: 999,
+        fontSize: 12,
+        fontWeight: 600,
+        cursor: "pointer",
+        backgroundColor:
+          activeTab === tab ? "#111827" : "transparent",
+        color: activeTab === tab ? "#e5e7eb" : "#9ca3af",
+      }}
+    >
+      {tab === "DASHBOARD"
+        ? "Dashboard"
+        : tab === "ORDERS"
+        ? "Orders"
+        : tab === "WALKIN"
+        ? "Walk-in"
+        : tab === "PICKUP"
+        ? "Pickup"
+        : "Ready to deliver"}
+    </button>
+  )
+)}
+
+
         </div>
 
         {/* Filters */}
@@ -359,46 +364,49 @@ export default function AdminPage() {
         )}
 
         {activeTab === "PICKUP" ? (
-          <PickupView
-            isMobile={isMobile}
-            loading={loading}
-            pickupOrders={pickupOrders}
-            savingMap={savingMap}
-            onPickupConfirm={handlePickupConfirm}
-          />
-        ) : activeTab === "ORDERS" ? (
-          <OrdersView
-            isMobile={isMobile}
-            loading={loading}
-            // Only picked orders (NEW/READY/DELIVERED are hidden here)
-            sortedOrders={pickedOrders}
-            savingMap={savingMap}
-            onStatusChange={handleStatusChange}
-            onTotalUpdate={handleTotalUpdate}
-          />
-        ) : activeTab === "WALKIN" ? (
-          <WalkInView
-            isMobile={isMobile}
-            societies={societies}
-            newCustomerName={newCustomerName}
-            newPhone={newPhone}
-            newSociety={newSociety}
-            newBlock={newBlock} // pass block to WalkInView
-            creatingWalkIn={creatingWalkIn}
-            setNewCustomerName={setNewCustomerName}
-            setNewPhone={setNewPhone}
-            setNewSociety={setNewSociety}
-            setNewBlock={setNewBlock} // pass setter
-            onCreateWalkIn={handleCreateWalkInOrder}
-          />
-        ) : (
-          <SimpleView
-            isMobile={isMobile}
-            loading={loading}
-            sortedOrders={sortedOrders}
-            onMarkDelivered={(id) => handleStatusChange(id, "DELIVERED")}
-          />
-        )}
+  <PickupView
+    isMobile={isMobile}
+    loading={loading}
+    pickupOrders={pickupOrders}
+    savingMap={savingMap}
+    onPickupConfirm={handlePickupConfirm}
+  />
+) : activeTab === "ORDERS" ? (
+  <OrdersView
+    isMobile={isMobile}
+    loading={loading}
+    // Only picked orders (NEW/READY/DELIVERED are hidden here)
+    sortedOrders={pickedOrders}
+    savingMap={savingMap}
+    onStatusChange={handleStatusChange}
+    onTotalUpdate={handleTotalUpdate}
+  />
+) : activeTab === "WALKIN" ? (
+  <WalkInView
+    isMobile={isMobile}
+    societies={societies}
+    newCustomerName={newCustomerName}
+    newPhone={newPhone}
+    newSociety={newSociety}
+    newBlock={newBlock}
+    creatingWalkIn={creatingWalkIn}
+    setNewCustomerName={setNewCustomerName}
+    setNewPhone={setNewPhone}
+    setNewSociety={setNewSociety}
+    setNewBlock={setNewBlock}
+    onCreateWalkIn={handleCreateWalkInOrder}
+  />
+) : activeTab === "DASHBOARD" ? (
+  <DashboardView orders={orders} loading={loading} />
+) : (
+  <SimpleView
+    isMobile={isMobile}
+    loading={loading}
+    sortedOrders={sortedOrders}
+    onMarkDelivered={(id) => handleStatusChange(id, "DELIVERED")}
+  />
+)}
+
       </div>
     </main>
   );
