@@ -37,17 +37,60 @@ function getOrderBlock(order: Order): string {
 function buildWhatsappMessage(order: Order): string {
   const amount = order.total_price ?? 0;
   const block = getOrderBlock(order);
+
+  // Line with block/flat/society
   const flatLine = block
-    ? `Block ${block}, Flat ${order.flat_number}`
-    : `Flat ${order.flat_number}`;
+    ? `Block ${block}, Flat ${order.flat_number}, ${order.society_name}.`
+    : `Flat ${order.flat_number}, ${order.society_name}.`;
+
+  // Build item summary from order.items_json (how you already store counts)
+let summaryText = "No detailed breakdown available.";
+
+type ItemsJson = Record<string, number>;
+type OrderWithItemsJson = Order & {
+  items_json?: ItemsJson | null;
+};
+
+const rawItems = (order as OrderWithItemsJson).items_json;
+
+if (rawItems && typeof rawItems === "object") {
+  const entries = Object.entries(rawItems).filter(
+    ([, val]) => typeof val === "number" && (val as number) > 0
+  ) as [string, number][];
+
+  if (entries.length > 0) {
+    const summaryLines = entries.map(([key, qty]) => {
+      // key is like "men_shirt_kurta_tshirt" – we can make it a bit nicer
+      const niceKey = key
+        .replace(/_/g, " ")
+        .replace(/\b\w/g, (c) => c.toUpperCase());
+      return `${niceKey}: ${qty} pcs`;
+    });
+
+    summaryText = summaryLines.join("\n");
+  }
+}
+
+
+  // Create UPI link (clickable in WhatsApp)
+  const upiId = "7406660311@upi";
+  const upiLink =
+    `https://upi.link/pay?pa=${encodeURIComponent(upiId)}` +
+    `&am=${amount}&cu=INR` +
+    `&tn=${encodeURIComponent(`Ironing order - ${order.flat_number}`)}`;
 
   return (
-    `Hi! Your ironing order is READY.\n` +
-    `${flatLine}, ${order.society_name}.\n` +
-    `Total amount: ₹${amount}.\n` +
+    `Hi! Your ironing order is Ready and we will deliver it in the evening slot.\n` +
+    `${flatLine}\n` +
+    `Total amount: ₹${amount}.\n\n` +
+    `Click here to pay:\n${upiLink}\n\n` +
+    `Detailed Summary:\n${summaryText}\n\n` +
     `Thank you!`
   );
 }
+
+
+
 
 // Block ordering A → G for PSR Aster
 const BLOCK_PRIORITY: Record<string, number> = {
@@ -114,26 +157,29 @@ export default function SimpleView({
   });
 
   const openWhatsApp = (order: Order) => {
-    const phone = getOrderPhone(order);
-    if (!phone) {
-      alert("No phone number saved for this order.");
-      return;
-    }
+  const phone = getOrderPhone(order);
+  if (!phone) {
+    alert("No phone number saved for this order.");
+    return;
+  }
 
-    const msg = buildWhatsappMessage(order);
-    const cleaned = phone.replace(/[^0-9]/g, "");
-    const withCountry = cleaned.startsWith("91")
-      ? cleaned
-      : `91${cleaned}`;
+  const msg = buildWhatsappMessage(order);
+  const cleaned = phone.replace(/[^0-9]/g, "");
+  const withCountry = cleaned.startsWith("91")
+    ? cleaned
+    : `91${cleaned}`;
 
-    const url = `https://wa.me/${withCountry}?text=${encodeURIComponent(
-      msg
-    )}`;
+  const url = `whatsapp://send?phone=${withCountry}&text=${encodeURIComponent(
+    msg
+  )}`;
 
-    if (typeof window !== "undefined") {
-      window.open(url, "_blank");
-    }
-  };
+  if (typeof window !== "undefined") {
+    // Open WhatsApp using the native URL scheme
+    window.open(url, "_blank");
+  }
+};
+
+
 
   // Desktop table
   if (!isMobile) {
