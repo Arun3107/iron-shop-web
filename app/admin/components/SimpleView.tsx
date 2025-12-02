@@ -1,6 +1,7 @@
 // app/admin/components/SimpleView.tsx
 "use client";
 
+import React, { useState } from "react";
 import type { Order } from "../types";
 import { thStyle, tdStyle } from "../styles";
 import { StatusBadge } from "../helpers";
@@ -21,6 +22,11 @@ type OrderWithPhone = Order & {
 
 type OrderWithBlock = Order & {
   block?: string | null;
+};
+
+type ItemsJson = Record<string, number>;
+type OrderWithItemsJson = Order & {
+  items_json?: ItemsJson | null;
 };
 
 // Try to pull a phone number from the order (field name may vary)
@@ -44,33 +50,27 @@ function buildWhatsappMessage(order: Order): string {
     : `Flat ${order.flat_number}, ${order.society_name}.`;
 
   // Build item summary from order.items_json (how you already store counts)
-let summaryText = "No detailed breakdown available.";
+  let summaryText = "No detailed breakdown available.";
 
-type ItemsJson = Record<string, number>;
-type OrderWithItemsJson = Order & {
-  items_json?: ItemsJson | null;
-};
+  const rawItems = (order as OrderWithItemsJson).items_json;
 
-const rawItems = (order as OrderWithItemsJson).items_json;
+  if (rawItems && typeof rawItems === "object") {
+    const entries = Object.entries(rawItems).filter(
+      ([, val]) => typeof val === "number" && (val as number) > 0
+    ) as [string, number][];
 
-if (rawItems && typeof rawItems === "object") {
-  const entries = Object.entries(rawItems).filter(
-    ([, val]) => typeof val === "number" && (val as number) > 0
-  ) as [string, number][];
+    if (entries.length > 0) {
+      const summaryLines = entries.map(([key, qty]) => {
+        // key is like "men_shirt_kurta_tshirt" – we can make it a bit nicer
+        const niceKey = key
+          .replace(/_/g, " ")
+          .replace(/\b\w/g, (c) => c.toUpperCase());
+        return `${niceKey}: ${qty} pcs`;
+      });
 
-  if (entries.length > 0) {
-    const summaryLines = entries.map(([key, qty]) => {
-      // key is like "men_shirt_kurta_tshirt" – we can make it a bit nicer
-      const niceKey = key
-        .replace(/_/g, " ")
-        .replace(/\b\w/g, (c) => c.toUpperCase());
-      return `${niceKey}: ${qty} pcs`;
-    });
-
-    summaryText = summaryLines.join("\n");
+      summaryText = summaryLines.join("\n");
+    }
   }
-}
-
 
   // Create UPI link (clickable in WhatsApp)
   const upiId = "7406660311@upi";
@@ -88,9 +88,6 @@ if (rawItems && typeof rawItems === "object") {
     `Thank you!`
   );
 }
-
-
-
 
 // Block ordering A → G for PSR Aster
 const BLOCK_PRIORITY: Record<string, number> = {
@@ -117,6 +114,9 @@ export default function SimpleView({
   sortedOrders,
   onMarkDelivered,
 }: Props) {
+  // Track which orders have been notified via WhatsApp
+  const [notified, setNotified] = useState<Record<string, boolean>>({});
+
   if (loading) {
     return (
       <div style={{ fontSize: 13, color: "#9ca3af" }}>
@@ -157,29 +157,31 @@ export default function SimpleView({
   });
 
   const openWhatsApp = (order: Order) => {
-  const phone = getOrderPhone(order);
-  if (!phone) {
-    alert("No phone number saved for this order.");
-    return;
-  }
+    const phone = getOrderPhone(order);
+    if (!phone) {
+      alert("No phone number saved for this order.");
+      return;
+    }
 
-  const msg = buildWhatsappMessage(order);
-  const cleaned = phone.replace(/[^0-9]/g, "");
-  const withCountry = cleaned.startsWith("91")
-    ? cleaned
-    : `91${cleaned}`;
+    const msg = buildWhatsappMessage(order);
+    const cleaned = phone.replace(/[^0-9]/g, "");
+    const withCountry = cleaned.startsWith("91") ? cleaned : `91${cleaned}`;
 
-  const url = `whatsapp://send?phone=${withCountry}&text=${encodeURIComponent(
-    msg
-  )}`;
+    const url = `whatsapp://send?phone=${withCountry}&text=${encodeURIComponent(
+      msg
+    )}`;
 
-  if (typeof window !== "undefined") {
-    // Open WhatsApp using the native URL scheme
-    window.open(url, "_blank");
-  }
-};
+    if (typeof window !== "undefined") {
+      // Open WhatsApp using the native URL scheme
+      window.open(url, "_blank");
+    }
 
-
+    // Mark this order as notified (so button becomes grey + text shows)
+    setNotified((prev) => ({
+      ...prev,
+      [order.id]: true,
+    }));
+  };
 
   // Desktop table
   if (!isMobile) {
@@ -221,6 +223,7 @@ export default function SimpleView({
                 const flatLine = block
                   ? `Block ${block} · Flat ${order.flat_number}`
                   : `Flat ${order.flat_number}`;
+                const sent = !!notified[order.id];
 
                 return (
                   <tr
@@ -252,22 +255,49 @@ export default function SimpleView({
                           flexWrap: "wrap",
                         }}
                       >
-                        <button
-                          type="button"
-                          onClick={() => openWhatsApp(order)}
+                        {/* WhatsApp button + "Notification sent" text */}
+                        <div
                           style={{
-                            borderRadius: 999,
-                            border: "1px solid #15803d",
-                            padding: "4px 10px",
-                            fontSize: 11,
-                            fontWeight: 500,
-                            backgroundColor: "#022c22",
-                            color: "#bbf7d0",
-                            cursor: "pointer",
+                            display: "flex",
+                            flexDirection: "column",
                           }}
                         >
-                          WhatsApp
-                        </button>
+                          <button
+                            type="button"
+                            disabled={sent}
+                            onClick={() => {
+                              if (!sent) openWhatsApp(order);
+                            }}
+                            style={{
+                              borderRadius: 999,
+                              border: sent
+                                ? "1px solid #6b7280"
+                                : "1px solid #15803d",
+                              padding: "4px 10px",
+                              fontSize: 11,
+                              fontWeight: 500,
+                              backgroundColor: sent ? "#374151" : "#022c22",
+                              color: sent ? "#9ca3af" : "#bbf7d0",
+                              cursor: sent ? "default" : "pointer",
+                              opacity: sent ? 0.6 : 1,
+                            }}
+                          >
+                            {sent ? "Sent" : "WhatsApp"}
+                          </button>
+                          {sent && (
+                            <div
+                              style={{
+                                fontSize: 10,
+                                marginTop: 3,
+                                color: "#9ca3af",
+                              }}
+                            >
+                              Notification sent
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Mark delivered */}
                         <button
                           type="button"
                           onClick={() => onMarkDelivered(order.id)}
@@ -306,6 +336,7 @@ export default function SimpleView({
         const flatLine = block
           ? `Block ${block} · Flat ${order.flat_number}`
           : `Flat ${order.flat_number}`;
+        const sent = !!notified[order.id];
 
         return (
           <div
@@ -350,23 +381,46 @@ export default function SimpleView({
                 justifyContent: "space-between",
               }}
             >
-              <button
-                type="button"
-                onClick={() => openWhatsApp(order)}
-                style={{
-                  flex: 1,
-                  borderRadius: 999,
-                  border: "1px solid #15803d",
-                  padding: "6px 8px",
-                  fontSize: 11,
-                  fontWeight: 500,
-                  backgroundColor: "#022c22",
-                  color: "#bbf7d0",
-                  cursor: "pointer",
-                }}
-              >
-                WhatsApp
-              </button>
+              {/* WhatsApp button + notification text */}
+              <div style={{ flex: 1 }}>
+                <button
+                  type="button"
+                  disabled={sent}
+                  onClick={() => {
+                    if (!sent) openWhatsApp(order);
+                  }}
+                  style={{
+                    width: "100%",
+                    borderRadius: 999,
+                    border: sent
+                      ? "1px solid #6b7280"
+                      : "1px solid #15803d",
+                    padding: "6px 8px",
+                    fontSize: 11,
+                    fontWeight: 500,
+                    backgroundColor: sent ? "#374151" : "#022c22",
+                    color: sent ? "#9ca3af" : "#bbf7d0",
+                    cursor: sent ? "default" : "pointer",
+                    opacity: sent ? 0.6 : 1,
+                  }}
+                >
+                  {sent ? "Sent" : "WhatsApp"}
+                </button>
+                {sent && (
+                  <div
+                    style={{
+                      fontSize: 10,
+                      color: "#9ca3af",
+                      marginTop: 3,
+                      textAlign: "center",
+                    }}
+                  >
+                    Notification sent
+                  </div>
+                )}
+              </div>
+
+              {/* Mark delivered */}
               <button
                 type="button"
                 onClick={() => onMarkDelivered(order.id)}

@@ -1,7 +1,7 @@
 // app/admin/components/DashboardView.tsx
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import type { Order } from "../types";
 import { thStyle, tdStyle } from "../styles";
 
@@ -143,11 +143,6 @@ export default function DashboardView({ orders, loading }: DashboardViewProps) {
     .sort((a, b) => b.total - a.total)
     .slice(0, 3);
 
-  const monthFormatter = new Intl.DateTimeFormat("en-IN", {
-    month: "short",
-    year: "numeric",
-  });
-
   const deliveredSorted = [...deliveredOrders].sort((a, b) => {
     const da = getOrderDate(a);
     const db = getOrderDate(b);
@@ -157,32 +152,38 @@ export default function DashboardView({ orders, loading }: DashboardViewProps) {
     return db.getTime() - da.getTime(); // newest first
   });
 
-  // Month filter options based on delivered orders
-  const monthOptions = useMemo(() => {
-    const map = new Map<string, Date>();
-    deliveredOrders.forEach((order) => {
-      const d = getOrderDate(order);
-      if (!d) return;
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(
-        2,
-        "0"
-      )}`;
-      // store latest date for that month so label is consistent
-      const existing = map.get(key);
-      if (!existing || d > existing) {
-        map.set(key, d);
-      }
-    });
+// Month filter options based on delivered orders
+const monthOptions = (() => {
+  const monthFormatter = new Intl.DateTimeFormat("en-IN", {
+    month: "short",
+    year: "numeric",
+  });
 
-    const entries = Array.from(map.entries()).sort(([a], [b]) =>
-      b.localeCompare(a)
-    ); // newest month first
+  const map = new Map<string, Date>();
+  deliveredOrders.forEach((order) => {
+    const d = getOrderDate(order);
+    if (!d) return;
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(
+      2,
+      "0"
+    )}`;
+    // store latest date for that month so label is consistent
+    const existing = map.get(key);
+    if (!existing || d > existing) {
+      map.set(key, d);
+    }
+  });
 
-    return entries.map(([key, date]) => ({
-      key,
-      label: monthFormatter.format(date),
-    }));
-  }, [deliveredOrders, monthFormatter]);
+  const entries = Array.from(map.entries()).sort(([a], [b]) =>
+    b.localeCompare(a)
+  ); // newest month first
+
+  return entries.map(([key, date]) => ({
+    key,
+    label: monthFormatter.format(date),
+  }));
+})();
+
 
   const [selectedMonth, setSelectedMonth] = useState<string>("ALL");
 
