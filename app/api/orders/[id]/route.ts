@@ -1,4 +1,5 @@
 // app/api/orders/[id]/route.ts
+import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
@@ -13,7 +14,6 @@ type OrderUpdatePayload = {
   estimated_total?: number | null;
 };
 
-
 type OrderUpdateFields = {
   pickup_date?: string;
   pickup_slot?: string;
@@ -23,7 +23,6 @@ type OrderUpdateFields = {
   base_amount?: number | null;
   estimated_total?: number | null;
 };
-
 
 function getSupabaseServerClient() {
   const supabaseUrl =
@@ -40,37 +39,15 @@ function getSupabaseServerClient() {
   return createClient(supabaseUrl, serviceRoleKey);
 }
 
-function extractOrderIdFromRequest(
-  request: Request,
-  params: { id?: string } | undefined,
-): string | null {
-  // 1) Try params first (normal Next.js behaviour)
-  if (params?.id) return params.id;
-
-  // 2) Fallback: derive from URL path
-  const url = new URL(request.url);
-  const segments = url.pathname.split("/").filter(Boolean); // remove empty
-  // Expect something like: ["api", "orders", "<id>"]
-  const last = segments[segments.length - 1];
-  const secondLast = segments[segments.length - 2];
-
-  if (last && last !== "orders") return last;
-  if (secondLast && secondLast !== "orders") return secondLast;
-
-  return null;
-}
-
 export async function PATCH(
-  request: Request,
-  context: { params: { id?: string } },
+  request: NextRequest,
+  context: { params: Promise<{ id: string }> },
 ) {
-  const id = extractOrderIdFromRequest(request, context?.params);
+  const { id } = await context.params;
 
   if (!id) {
-    // Log once on server so we know what URL came in
-    console.error("orders/[id] PATCH: Missing id in params and URL", {
+    console.error("orders/[id] PATCH: Missing id in params", {
       url: request.url,
-      params: context?.params,
     });
     return NextResponse.json(
       { error: "Order id is required." },
@@ -88,7 +65,7 @@ export async function PATCH(
     );
   }
 
-    const {
+  const {
     action,
     pickup_date,
     pickup_slot,
@@ -98,7 +75,6 @@ export async function PATCH(
     base_amount,
     estimated_total,
   } = payload;
-
 
   let supabase;
   try {
@@ -115,7 +91,7 @@ export async function PATCH(
     // 🔹 CANCEL
     if (action === "cancel") {
       const { data, error } = await supabase
-        .from("orders") // your table name is "orders"
+        .from("orders")
         .update({ status: "CANCELLED" })
         .eq("id", id)
         .eq("status", "NEW")
@@ -143,8 +119,9 @@ export async function PATCH(
       return NextResponse.json({ order: data });
     }
 
-        // 🔹 MODIFY
+    // 🔹 MODIFY
     const updates: OrderUpdateFields = {};
+
     if (pickup_date) updates.pickup_date = pickup_date;
     if (pickup_slot) updates.pickup_slot = pickup_slot; // "Morning" | "Evening"
     if (typeof notes !== "undefined") updates.notes = notes;
@@ -176,7 +153,6 @@ export async function PATCH(
       .eq("status", "NEW")
       .select()
       .single();
-
 
     if (error) {
       console.error("Update order error", error);
