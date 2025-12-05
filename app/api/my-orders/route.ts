@@ -38,9 +38,9 @@ export async function GET(req: NextRequest) {
 
     const { data, error } = await supabase
   .from("orders")
-  .select(
-    "id, created_at, pickup_date, pickup_slot, society_name, flat_number, status, estimated_total, total_price, express_delivery, self_drop"
-  )
+.select(
+  "id, created_at, pickup_date, pickup_slot, society_name, flat_number, status, estimated_total, total_price, express_delivery, self_drop, notes, items_json, items_estimated_total"
+)
   .eq("phone", trimmed)
   .order("created_at", { ascending: false })
   .limit(10);
