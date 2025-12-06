@@ -25,6 +25,20 @@ function formatPickupDateTime(order: Order): string {
   return `${dateStr}, ${order.pickup_slot}`;
 }
 
+// Small helper to dial customer
+function callCustomer(rawPhone?: string | null) {
+  if (!rawPhone) {
+    alert("No phone number saved for this order.");
+    return;
+  }
+
+  const cleaned = rawPhone.replace(/[^0-9]/g, "");
+  const withCountry = cleaned.startsWith("91") ? cleaned : `91${cleaned}`;
+
+  if (typeof window !== "undefined") {
+    window.location.href = `tel:+${withCountry}`;
+  }
+}
 
 interface Props {
   isMobile: boolean;
@@ -123,25 +137,49 @@ export default function PickupView({
                       )}
                     </td>
                     <td style={tdStyle}>
-                      <button
-                        type="button"
-                        disabled={saving}
-                        onClick={() => onPickupConfirm(order.id)}
+                      <div
                         style={{
-                          borderRadius: 999,
-                          border: "none",
-                          padding: "4px 8px",
-                          fontSize: 11,
-                          fontWeight: 600,
-                          cursor: saving ? "not-allowed" : "pointer",
-                          background:
-                            "linear-gradient(to right, #f97316, #ea580c)",
-                          color: "#fffbeb",
-                          opacity: saving ? 0.6 : 1,
+                          display: "flex",
+                          gap: 6,
+                          flexWrap: "wrap",
                         }}
                       >
-                        {saving ? "Updating…" : "Confirm pickup"}
-                      </button>
+                        <button
+                          type="button"
+                          onClick={() => callCustomer(order.phone as string)}
+                          style={{
+                            borderRadius: 999,
+                            border: "1px solid #6b7280",
+                            padding: "4px 10px",
+                            fontSize: 11,
+                            fontWeight: 500,
+                            backgroundColor: "#020617",
+                            color: "#e5e7eb",
+                            cursor: "pointer",
+                          }}
+                        >
+                          Call
+                        </button>
+                        <button
+                          type="button"
+                          disabled={saving}
+                          onClick={() => onPickupConfirm(order.id)}
+                          style={{
+                            borderRadius: 999,
+                            border: "none",
+                            padding: "4px 8px",
+                            fontSize: 11,
+                            fontWeight: 600,
+                            cursor: saving ? "not-allowed" : "pointer",
+                            background:
+                              "linear-gradient(to right, #f97316, #ea580c)",
+                            color: "#fffbeb",
+                            opacity: saving ? 0.6 : 1,
+                          }}
+                        >
+                          {saving ? "Updating…" : "Confirm pickup"}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -180,7 +218,6 @@ function PickupCard({
   const [open, setOpen] = useState(false);
   const pickupLabel = formatPickupDateTime(order);
 
-
   return (
     <div
       style={{
@@ -212,9 +249,8 @@ function PickupCard({
             Flat: {order.flat_number}
           </div>
           <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>
-  {pickupLabel}
-</div>
-
+            {pickupLabel}
+          </div>
         </div>
         <button
           type="button"
@@ -260,26 +296,50 @@ function PickupCard({
         </div>
       )}
 
-      <button
-        type="button"
-        disabled={saving}
-        onClick={() => onPickupConfirm(order.id)}
+      <div
         style={{
           marginTop: 10,
-          width: "100%",
-          borderRadius: 999,
-          border: "none",
-          padding: "6px 10px",
-          fontSize: 12,
-          fontWeight: 600,
-          cursor: saving ? "not-allowed" : "pointer",
-          background: "linear-gradient(to right, #f97316, #ea580c)",
-          color: "#fffbeb",
-          opacity: saving ? 0.6 : 1,
+          display: "flex",
+          gap: 8,
         }}
       >
-        {saving ? "Updating…" : "Confirm pickup"}
-      </button>
+        <button
+          type="button"
+          onClick={() => callCustomer(order.phone as string)}
+          style={{
+            flex: 1,
+            borderRadius: 999,
+            border: "1px solid #6b7280",
+            padding: "6px 10px",
+            fontSize: 12,
+            fontWeight: 600,
+            backgroundColor: "#020617",
+            color: "#e5e7eb",
+            cursor: "pointer",
+          }}
+        >
+          Call
+        </button>
+        <button
+          type="button"
+          disabled={saving}
+          onClick={() => onPickupConfirm(order.id)}
+          style={{
+            flex: 1,
+            borderRadius: 999,
+            border: "none",
+            padding: "6px 10px",
+            fontSize: 12,
+            fontWeight: 600,
+            cursor: saving ? "not-allowed" : "pointer",
+            background: "linear-gradient(to right, #f97316, #ea580c)",
+            color: "#fffbeb",
+            opacity: saving ? 0.6 : 1,
+          }}
+        >
+          {saving ? "Updating…" : "Confirm pickup"}
+        </button>
+      </div>
     </div>
   );
 }

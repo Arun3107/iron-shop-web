@@ -108,6 +108,22 @@ function getBlockSortKey(order: Order): number {
   return rank === undefined ? 999 : rank;
 }
 
+// Helper to call customer directly
+function callCustomer(order: Order) {
+  const phone = getOrderPhone(order);
+  if (!phone) {
+    alert("No phone number saved for this order.");
+    return;
+  }
+
+  const cleaned = phone.replace(/[^0-9]/g, "");
+  const withCountry = cleaned.startsWith("91") ? cleaned : `91${cleaned}`;
+
+  if (typeof window !== "undefined") {
+    window.location.href = `tel:+${withCountry}`;
+  }
+}
+
 export default function SimpleView({
   isMobile,
   loading,
@@ -253,8 +269,27 @@ export default function SimpleView({
                           display: "flex",
                           gap: 6,
                           flexWrap: "wrap",
+                          alignItems: "flex-start",
                         }}
                       >
+                        {/* Call button */}
+                        <button
+                          type="button"
+                          onClick={() => callCustomer(order)}
+                          style={{
+                            borderRadius: 999,
+                            border: "1px solid #6b7280",
+                            padding: "4px 10px",
+                            fontSize: 11,
+                            fontWeight: 500,
+                            backgroundColor: "#020617",
+                            color: "#e5e7eb",
+                            cursor: "pointer",
+                          }}
+                        >
+                          Call
+                        </button>
+
                         {/* WhatsApp button + "Notification sent" text */}
                         <div
                           style={{
@@ -373,6 +408,26 @@ export default function SimpleView({
             >
               {amount === null ? "—" : `₹${amount}`}
             </div>
+
+            {/* Call button full width */}
+            <button
+              type="button"
+              onClick={() => callCustomer(order)}
+              style={{
+                width: "100%",
+                borderRadius: 999,
+                border: "1px solid #6b7280",
+                padding: "6px 8px",
+                fontSize: 11,
+                fontWeight: 500,
+                backgroundColor: "#020617",
+                color: "#e5e7eb",
+                cursor: "pointer",
+                marginBottom: 6,
+              }}
+            >
+              Call
+            </button>
 
             <div
               style={{
