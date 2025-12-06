@@ -243,19 +243,26 @@ export default function BookingForm(props: {
   }, [society, setSociety]);
 
   function handleSocietyChange(e: ChangeEvent<HTMLSelectElement>): void {
-    const value = e.target.value;
+  const value = e.target.value;
 
-    if (value === ADD_NEW_SOCIETY_VALUE) {
-      setIsAddingSociety(true);
-      setAddSocietyError(null);
-      return;
-    }
-
-    setSociety(value);
-    setIsAddingSociety(false);
+  if (value === ADD_NEW_SOCIETY_VALUE) {
+    // User chose “Add new society”
+    // 1) Clear current selection so the box doesn’t still show old society
+    // 2) Open the add-society row
+    setSociety("");
+    setIsAddingSociety(true);
     setNewSocietyNameInput("");
     setAddSocietyError(null);
+    return;
   }
+
+  // Normal selection
+  setSociety(value);
+  setIsAddingSociety(false);
+  setNewSocietyNameInput("");
+  setAddSocietyError(null);
+}
+
 
   async function handleAddSociety() {
     const name = newSocietyNameInput.trim();
@@ -621,18 +628,19 @@ if (c.flat_number) setFlatNumber(c.flat_number);
               </div>
             ) : (
               <select
-                value={society}
-                onChange={handleSocietyChange}
-                style={inputStyle}
-              >
-                <option value="">Select society</option>
-                {effectiveSocietyOptions.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-                <option value={ADD_NEW_SOCIETY_VALUE}>+ Add new society</option>
-              </select>
+  value={isAddingSociety ? "" : society}
+  onChange={handleSocietyChange}
+  style={inputStyle}
+>
+  <option value="">Select society</option>
+  {effectiveSocietyOptions.map((s) => (
+    <option key={s} value={s}>
+      {s}
+    </option>
+  ))}
+  <option value={ADD_NEW_SOCIETY_VALUE}>+ Add new society</option>
+</select>
+
             )}
 
             {societiesError && (
