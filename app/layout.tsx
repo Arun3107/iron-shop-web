@@ -1,4 +1,5 @@
 // app/layout.tsx
+import Script from "next/script";
 import type { Metadata } from "next";
 import "./globals.css";
 
@@ -14,7 +15,7 @@ export const metadata: Metadata = {
     siteName: "Ironing Service",
     images: [
       {
-        url: "/og-banner.jpg", // put the image file here in /public
+        url: "/og-banner.jpg", // file lives in /public
         width: 1200,
         height: 630,
       },
@@ -38,7 +39,23 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        {/* Google Analytics */}
+        <Script
+          src="https://www.googletagmanager.com/gtag/js?id=G-0DVK0CPTNN"
+          strategy="afterInteractive"
+        />
+        <Script id="ga-gtag-init" strategy="afterInteractive">
+          {`
+            window.dataLayer = window.dataLayer || [];
+            function gtag(){dataLayer.push(arguments);}
+            gtag('js', new Date());
+            gtag('config', 'G-0DVK0CPTNN');
+          `}
+        </Script>
+
+        {children}
+      </body>
     </html>
   );
 }
