@@ -1,16 +1,16 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import HomeScreen from "./components/HomeScreen";
 import BookingForm from "./components/BookingForm";
-import BookingConfirmation from "./components/BookingConfirmation";
 import MyOrders from "./components/MyOrders";
 
-type View = "home" | "book" | "orders" | "confirmation";
+type View = "home" | "book" | "orders";
 
 export default function Home() {
+  const router = useRouter();
   const [view, setView] = useState<View>("home");
-  const [confirmationMessage, setConfirmationMessage] = useState("");
 
   return (
     <main
@@ -29,13 +29,12 @@ export default function Home() {
         style={{
           width: "100%",
           maxWidth: 520,
-          backgroundColor:
-            view === "confirmation" ? "#020617" : "rgba(255,255,255,0.96)",
+          backgroundColor: "rgba(255,255,255,0.96)",
           borderRadius: 20,
           padding: 20,
           boxShadow: "0 16px 40px rgba(0,0,0,0.14)",
           backdropFilter: "blur(6px)",
-          color: view === "confirmation" ? "#f9fafb" : "inherit",
+          color: "inherit",
         }}
       >
         {view === "home" && (
@@ -49,21 +48,14 @@ export default function Home() {
           <BookingForm
             onBack={() => setView("home")}
             onConfirm={(msg) => {
-              setConfirmationMessage(msg);
-              setView("confirmation");
+              // Redirect to dedicated confirmation page for tracking
+              const encoded = encodeURIComponent(msg);
+              router.push(`/booking-confirmed?msg=${encoded}`);
             }}
           />
         )}
 
         {view === "orders" && <MyOrders onBack={() => setView("home")} />}
-
-        {view === "confirmation" && (
-          <BookingConfirmation
-            message={confirmationMessage}
-            onBookNew={() => setView("book")}
-            onHome={() => setView("home")}
-          />
-        )}
       </div>
 
       {/* Add-to-home-screen tip (unchanged) */}
