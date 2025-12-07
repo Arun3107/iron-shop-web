@@ -27,6 +27,7 @@ const ITEM_GROUPS: { title: string; keys: string[] }[] = [
     title: "Women Clothing",
     keys: [
       "women_kurti_top",
+      "long_kurti_frock",
       "women_leggings_pant_salwar_shorts",
       "women_dress",
       "women_simple_saree",
