@@ -72,9 +72,11 @@ export async function GET(request: Request) {
 
     // Filter in JS using normalized flat
     const matches = rows.filter((row) => {
-      if (!row.flat_number) return false;
-      return normalizeFlat(row.flat_number) === normalizedFlat;
-    });
+  const a = row.flat_number ? normalizeFlat(row.flat_number) : "";
+  const b = row.customer_name ? normalizeFlat(row.customer_name) : "";
+  return a === normalizedFlat || b === normalizedFlat;
+});
+
 
     return NextResponse.json({ matches }, { status: 200 });
   } catch (err) {

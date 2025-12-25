@@ -85,13 +85,15 @@ const ITEM_GROUPS: { title: string; keys: string[] }[] = [
   {
     title: "Women Clothing",
     keys: [
-      "women_kurti_top",
-      "women_leggings_pant_salwar_shorts",
-      "women_dress",
-      "women_simple_saree",
-      "women_heavy_silk_saree",
-      "women_lehenga",
-    ],
+  "women_kurti_top",
+  "long_kurti_frock",
+  "women_leggings_pant_salwar_shorts",
+  "women_dress",
+  "women_simple_saree",
+  "women_heavy_silk_saree",
+  "women_lehenga",
+],
+
   },
   {
     title: "Kids wear (below 5 years)",
@@ -949,10 +951,8 @@ function ItemsModal(props: {
 
                     const { raw } = getValuePair(key);
 
-                    const label =
-                      key === "women_kurti_top"
-                        ? "Kurti / Top / Dupatta"
-                        : def.label;
+                    const label = def.label;
+
 
                     return (
                       <div

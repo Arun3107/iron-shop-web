@@ -24,10 +24,11 @@ export const ITEM_PRICES = {
 
   // Women Clothing
   women_kurti_top: {
-    label: "Kurti / Top",
-    price: 10,
-  },
-  long_kurti_frock: { label: "Long Kurti / Frock", price: 16 },
+  label: "Blouse / Top / Dupatta",
+  price: 10,
+},
+long_kurti_frock: { label: "Kurti / Frock", price: 15 },
+
   women_leggings_pant_salwar_shorts: {
     label: "Leggings / Pant / Salwar / Shorts",
     price: 10,

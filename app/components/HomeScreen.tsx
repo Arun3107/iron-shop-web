@@ -72,6 +72,87 @@ export default function HomeScreen(props: {
         />
       </div>
 
+      {/* Buttons */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: 12,
+          marginTop: 4,
+        }}
+      >
+        <button
+          type="button"
+          onClick={props.onBookClick}
+          style={{
+            borderRadius: 999,
+            border: "none",
+            padding: "14px 0",
+            fontSize: 15,
+            fontWeight: 700,
+            cursor: "pointer",
+            background:
+              "linear-gradient(135deg, #f97316 0%, #ea580c 40%, #7c2d12 100%)",
+            color: "white",
+            boxShadow: "0 10px 24px rgba(124, 45, 18, 0.35)",
+          }}
+        >
+          Book New
+        </button>
+
+        <button
+          type="button"
+          onClick={props.onOrdersClick}
+          style={{
+            borderRadius: 999,
+            padding: "14px 0",
+            border: "1px solid #e2e8f0",
+            backgroundColor: "#ffffff",
+            color: "#1e293b",
+            fontSize: 15,
+            fontWeight: 600,
+            cursor: "pointer",
+            boxShadow: "0 4px 10px rgba(148, 163, 184, 0.25)",
+          }}
+        >
+          My Orders
+        </button>
+      </div>
+
+      {/* Free pickup note – premium band */}
+      <div
+        style={{
+          borderRadius: 12,
+          padding: "10px 12px",
+          textAlign: "center",
+          fontWeight: 700,
+          fontSize: 14,
+          color: "#0f172a",
+          background:
+            "linear-gradient(135deg, #eef2ff 0%, #e0f2fe 40%, #dcfce7 100%)",
+          boxShadow: "0 8px 18px rgba(15, 23, 42, 0.08)",
+        }}
+      >
+        Free Pickup & Drop — No Minimum Order
+      </div>
+
+      {/* Tuesday Closed note – premium band */}
+      <div
+        style={{
+          borderRadius: 12,
+          padding: "10px 12px",
+          textAlign: "center",
+          fontWeight: 700,
+          fontSize: 14,
+          color: "#f9fafbff",
+          background:
+            "linear-gradient(135deg, #0d0e0fff 0%, #17374dff 40%, #0a0d0bff 100%)",
+          boxShadow: "0 8px 18px rgba(15, 23, 42, 0.08)",
+        }}
+      >
+        We are closed every Tuesday. Please plan accordingly
+      </div>
+
       {/* Intro + rate tiles (no big outer box) */}
       <section
         style={{
@@ -145,8 +226,8 @@ export default function HomeScreen(props: {
           <RateTile
             icon="👚"
             iconBg="#fef3c7"
-            title="Kurti / Top"
-            subtitle="₹10 per piece"
+            title="Kurti / Frock"
+            subtitle="₹15 per piece"
           />
           <RateTile
             icon="🧒"
@@ -208,70 +289,7 @@ export default function HomeScreen(props: {
           * Full rate card (all items) is available at the shop.
         </div>
       </section>
-
-      {/* Free pickup note – premium band */}
-      <div
-        style={{
-          borderRadius: 12,
-          padding: "10px 12px",
-          textAlign: "center",
-          fontWeight: 700,
-          fontSize: 14,
-          color: "#0f172a",
-          background:
-            "linear-gradient(135deg, #eef2ff 0%, #e0f2fe 40%, #dcfce7 100%)",
-          boxShadow: "0 8px 18px rgba(15, 23, 42, 0.08)",
-        }}
-      >
-        Free Pickup & Drop — No Minimum Order
-      </div>
-
-      {/* Buttons */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          gap: 12,
-          marginTop: 4,
-        }}
-      >
-        <button
-          type="button"
-          onClick={props.onBookClick}
-          style={{
-            borderRadius: 999,
-            border: "none",
-            padding: "14px 0",
-            fontSize: 15,
-            fontWeight: 700,
-            cursor: "pointer",
-            background:
-              "linear-gradient(135deg, #f97316 0%, #ea580c 40%, #7c2d12 100%)",
-            color: "white",
-            boxShadow: "0 10px 24px rgba(124, 45, 18, 0.35)",
-          }}
-        >
-          Book New
-        </button>
-
-        <button
-          type="button"
-          onClick={props.onOrdersClick}
-          style={{
-            borderRadius: 999,
-            padding: "14px 0",
-            border: "1px solid #e2e8f0",
-            backgroundColor: "#ffffff",
-            color: "#1e293b",
-            fontSize: 15,
-            fontWeight: 600,
-            cursor: "pointer",
-            boxShadow: "0 4px 10px rgba(148, 163, 184, 0.25)",
-          }}
-        >
-          My Orders
-        </button>
-      </div>
+    
     </div>
   );
 }

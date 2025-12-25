@@ -2,8 +2,8 @@
 "use client";
 
 import type React from "react";
-import { useEffect, useState } from "react";
-import { filterLabelStyle, filterInputStyle } from "../styles";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { filterInputStyle, filterLabelStyle } from "../styles";
 
 interface Props {
   isMobile: boolean;
@@ -61,10 +61,22 @@ export default function WalkInView({
   // Customer lookup state
   const [customerMatches, setCustomerMatches] = useState<CustomerMatch[]>([]);
   const [customerLookupLoading, setCustomerLookupLoading] = useState(false);
-  const [customerLookupError, setCustomerLookupError] =
-    useState<string | null>(null);
+  const [customerLookupError, setCustomerLookupError] = useState<string | null>(
+    null,
+  );
 
-  // Load societies from /api/societies on mount
+  /**
+   * IMPORTANT:
+   * We do NOT want lookup to re-run when society changes.
+   * But inside lookup, we still want the latest society value.
+   * So we store society in a ref.
+   */
+  const societyRef = useRef(newSociety);
+  useEffect(() => {
+    societyRef.current = newSociety;
+  }, [newSociety]);
+
+  // Load societies from /api/societies
   useEffect(() => {
     let cancelled = false;
 
@@ -74,13 +86,11 @@ export default function WalkInView({
 
       try {
         const res = await fetch("/api/societies");
-        if (!res.ok) {
-          throw new Error("Failed to fetch societies");
-        }
+        if (!res.ok) throw new Error("Failed to fetch societies");
 
         const json = await res.json();
         const list = (json?.societies ?? []).map(
-          (s: { name: string }) => s.name
+          (s: { name: string }) => s.name,
         ) as string[];
 
         if (cancelled) return;
@@ -89,12 +99,10 @@ export default function WalkInView({
           const sorted = [...list].sort((a, b) => a.localeCompare(b));
           setSocietyOptions(sorted);
 
+          // If empty, set default society once
           if (!newSociety) {
-            if (sorted.includes("PSR Aster")) {
-              setNewSociety("PSR Aster");
-            } else {
-              setNewSociety(sorted[0]);
-            }
+            if (sorted.includes("PSR Aster")) setNewSociety("PSR Aster");
+            else setNewSociety(sorted[0] ?? "");
           }
         } else {
           const fallback = Array.from(new Set(societies)).sort();
@@ -108,9 +116,7 @@ export default function WalkInView({
           setSocietyOptions(fallback);
         }
       } finally {
-        if (!cancelled) {
-          setSocietiesLoading(false);
-        }
+        if (!cancelled) setSocietiesLoading(false);
       }
     }
 
@@ -126,24 +132,28 @@ export default function WalkInView({
       ? societyOptions
       : Array.from(new Set(societies)).sort();
 
-  function handleSocietyChange(
-    event: React.ChangeEvent<HTMLSelectElement>
-  ): void {
-    const value = event.target.value;
+  const handleSocietyChange = useCallback(
+    (event: React.ChangeEvent<HTMLSelectElement>) => {
+      const value = event.target.value;
 
-    if (value === ADD_NEW_VALUE) {
-      setIsAddingSociety(true);
+      if (value === ADD_NEW_VALUE) {
+        setIsAddingSociety(true);
+        setAddSocietyError(null);
+        return;
+      }
+
+      setNewSociety(value);
+      setIsAddingSociety(false);
+      setNewSocietyNameInput("");
       setAddSocietyError(null);
-      return;
-    }
 
-    setNewSociety(value);
-    setIsAddingSociety(false);
-    setNewSocietyNameInput("");
-    setAddSocietyError(null);
-  }
+      // NOTE: we do NOT trigger lookup here.
+      // Lookup happens only when flat changes.
+    },
+    [setNewSociety],
+  );
 
-  async function handleAddSociety() {
+  const handleAddSociety = useCallback(async () => {
     const name = newSocietyNameInput.trim();
 
     if (!name) {
@@ -165,7 +175,7 @@ export default function WalkInView({
 
       if (!res.ok) {
         setAddSocietyError(
-          data?.error || "Could not add society. Please try again."
+          data?.error || "Could not add society. Please try again.",
         );
         return;
       }
@@ -174,8 +184,8 @@ export default function WalkInView({
 
       setSocietyOptions((prev) =>
         Array.from(new Set([...prev, createdName])).sort((a, b) =>
-          a.localeCompare(b)
-        )
+          a.localeCompare(b),
+        ),
       );
       setNewSociety(createdName);
       setIsAddingSociety(false);
@@ -187,33 +197,31 @@ export default function WalkInView({
     } finally {
       setAddingSociety(false);
     }
-  }
+  }, [newSocietyNameInput, setNewSociety]);
 
-  function handleCancelAddSociety() {
+  const handleCancelAddSociety = useCallback(() => {
     setIsAddingSociety(false);
     setNewSocietyNameInput("");
     setAddSocietyError(null);
-  }
+  }, []);
 
-  function applyCustomerMatch(match: CustomerMatch) {
-    if (match.flat_number) {
-      setNewCustomerName(match.flat_number);
-    }
-    if (match.block) {
-      setNewBlock(match.block);
-    }
-    if (match.phone) {
-      setNewPhone(match.phone);
-    }
-    if (match.society_name) {
-      setNewSociety(match.society_name);
-    }
-  }
+  const applyCustomerMatch = useCallback(
+    (match: CustomerMatch) => {
+      // Always overwrite; clear if missing so older values never stick
+      setNewCustomerName(match.flat_number ?? match.customer_name ?? "");
+      setNewBlock(match.block ?? "");
+      setNewPhone(match.phone ?? "");
+      if (match.society_name) setNewSociety(match.society_name);
+    },
+    [setNewCustomerName, setNewBlock, setNewPhone, setNewSociety],
+  );
 
-  // When flat + society change, try to look up an existing customer
+  /**
+   * Customer lookup — ONLY when flat changes
+   */
   useEffect(() => {
     const flat = newCustomerName.trim();
-    const society = newSociety.trim();
+    const society = societyRef.current.trim();
 
     if (!flat || !society) {
       setCustomerMatches([]);
@@ -230,18 +238,13 @@ export default function WalkInView({
       setCustomerLookupError(null);
 
       try {
-        const params = new URLSearchParams({
-          society,
-          flat,
-        });
+        const params = new URLSearchParams({ society, flat });
 
         const res = await fetch(`/api/admin/customers?${params.toString()}`, {
           signal: controller.signal,
         });
 
-        if (!res.ok) {
-          throw new Error("Failed to lookup customer");
-        }
+        if (!res.ok) throw new Error("Failed to lookup customer");
 
         const json = await res.json();
         if (cancelled) return;
@@ -249,72 +252,42 @@ export default function WalkInView({
         const matches = (json?.matches ?? []) as CustomerMatch[];
         setCustomerMatches(matches);
 
-        // If we have exactly one match, auto-fill details (always overwrite)
-if (matches.length === 1) {
-  const m = matches[0];
+        // ✅ If no matches -> clear phone + block so old values don’t stick
+        if (matches.length === 0) {
+          setNewPhone("");
+          setNewBlock("");
+          return;
+        }
 
-  if (m.phone) {
-    setNewPhone(m.phone);
-  }
-
-  if (m.block) {
-    setNewBlock(m.block);
-  } else {
-    // If the matched record has no block, clear it so staff can enter.
-    setNewBlock("");
-  }
-
-  if (m.flat_number) {
-    setNewCustomerName(m.flat_number);
-  }
-
-  if (m.society_name) {
-    setNewSociety(m.society_name);
-  }
-}
-
+        // ✅ If exactly one match -> auto-fill
+        if (matches.length === 1) {
+          applyCustomerMatch(matches[0]);
+        }
       } catch (err: unknown) {
         if (cancelled) return;
         console.error("Error looking up customer", err);
         setCustomerLookupError("Could not check existing customers.");
         setCustomerMatches([]);
       } finally {
-        if (!cancelled) {
-          setCustomerLookupLoading(false);
-        }
+        if (!cancelled) setCustomerLookupLoading(false);
       }
-    }, 400); // small debounce so we don't call on every keystroke
+    }, 400);
 
     return () => {
       cancelled = true;
       controller.abort();
       clearTimeout(timeoutId);
     };
-  }, [
-    newCustomerName,
-    newSociety,
-    newPhone,
-    newBlock,
-    setNewPhone,
-    setNewBlock,
-    setNewCustomerName,
-    setNewSociety,
-  ]);
+  }, [newCustomerName, applyCustomerMatch, setNewBlock, setNewPhone]);
 
   return (
-    <div
-      style={{
-        display: "grid",
-        gap: 12,
-      }}
-    >
+    <div style={{ display: "grid", gap: 12 }}>
       <div
         style={{
           borderRadius: 12,
           border: "1px solid #1f2937",
           padding: 10,
-          background:
-            "radial-gradient(circle at top left, #4f46e533, #020617)",
+          background: "radial-gradient(circle at top left, #4f46e533, #020617)",
         }}
       >
         <div
@@ -326,20 +299,8 @@ if (matches.length === 1) {
             marginBottom: 8,
           }}
         >
-          <div
-            style={{
-              fontSize: 12,
-              fontWeight: 600,
-            }}
-          >
-            Add walk-in order
-          </div>
-          <div
-            style={{
-              fontSize: 11,
-              color: "#9ca3af",
-            }}
-          >
+          <div style={{ fontSize: 12, fontWeight: 600 }}>Add walk-in order</div>
+          <div style={{ fontSize: 11, color: "#9ca3af" }}>
             For customers who directly drop clothes at the shop.
           </div>
         </div>
@@ -355,7 +316,7 @@ if (matches.length === 1) {
             fontSize: 12,
           }}
         >
-          {/* Flat number (used as name + flat_number) */}
+          {/* Flat number */}
           <div>
             <label style={filterLabelStyle}>Flat number</label>
             <input
@@ -368,38 +329,20 @@ if (matches.length === 1) {
 
             {customerLookupLoading &&
               newCustomerName.trim() &&
-              newSociety.trim() && (
-                <div
-                  style={{
-                    marginTop: 4,
-                    fontSize: 11,
-                    color: "#9ca3af",
-                  }}
-                >
+              societyRef.current.trim() && (
+                <div style={{ marginTop: 4, fontSize: 11, color: "#9ca3af" }}>
                   Checking existing customers…
                 </div>
               )}
 
             {!customerLookupLoading && customerMatches.length === 1 && (
-              <div
-                style={{
-                  marginTop: 4,
-                  fontSize: 11,
-                  color: "#22c55e",
-                }}
-              >
+              <div style={{ marginTop: 4, fontSize: 11, color: "#22c55e" }}>
                 Existing customer matched. Details auto-filled.
               </div>
             )}
 
             {!customerLookupLoading && customerMatches.length > 1 && (
-              <div
-                style={{
-                  marginTop: 4,
-                  fontSize: 11,
-                  color: "#e5e7eb",
-                }}
-              >
+              <div style={{ marginTop: 4, fontSize: 11, color: "#e5e7eb" }}>
                 We found multiple existing customers for this flat:
                 <div
                   style={{
@@ -425,9 +368,9 @@ if (matches.length === 1) {
                         cursor: "pointer",
                       }}
                     >
-                      {(m.flat_number || "").toString()}{" "}
-                      {m.block ? `, ${m.block} Block` : ""}{" "}
-                      {m.phone ? `• ${m.phone}` : ""}
+                      {(m.flat_number || m.customer_name || "").toString()}
+                      {m.block ? `, ${m.block} Block` : ""}
+                      {m.phone ? ` • ${m.phone}` : ""}
                     </button>
                   ))}
                 </div>
@@ -435,13 +378,7 @@ if (matches.length === 1) {
             )}
 
             {customerLookupError && (
-              <div
-                style={{
-                  marginTop: 4,
-                  fontSize: 11,
-                  color: "#fca5a5",
-                }}
-              >
+              <div style={{ marginTop: 4, fontSize: 11, color: "#fca5a5" }}>
                 {customerLookupError}
               </div>
             )}
@@ -520,35 +457,19 @@ if (matches.length === 1) {
             )}
 
             {societiesError && (
-              <div
-                style={{
-                  marginTop: 4,
-                  fontSize: 11,
-                  color: "#fca5a5",
-                }}
-              >
+              <div style={{ marginTop: 4, fontSize: 11, color: "#fca5a5" }}>
                 {societiesError}
               </div>
             )}
 
             {isAddingSociety && (
-              <div
-                style={{
-                  marginTop: 6,
-                  display: "flex",
-                  gap: 4,
-                }}
-              >
+              <div style={{ marginTop: 6, display: "flex", gap: 4 }}>
                 <input
                   type="text"
                   value={newSocietyNameInput}
                   onChange={(e) => setNewSocietyNameInput(e.target.value)}
                   placeholder="New society name"
-                  style={{
-                    ...filterInputStyle,
-                    flex: 1,
-                    fontSize: 12,
-                  }}
+                  style={{ ...filterInputStyle, flex: 1, fontSize: 12 }}
                 />
                 <button
                   type="button"
@@ -589,26 +510,14 @@ if (matches.length === 1) {
             )}
 
             {addSocietyError && (
-              <div
-                style={{
-                  marginTop: 4,
-                  fontSize: 11,
-                  color: "#fca5a5",
-                }}
-              >
+              <div style={{ marginTop: 4, fontSize: 11, color: "#fca5a5" }}>
                 {addSocietyError}
               </div>
             )}
           </div>
         </div>
 
-        <div
-          style={{
-            marginTop: 10,
-            display: "flex",
-            justifyContent: "flex-end",
-          }}
-        >
+        <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-end" }}>
           <button
             type="button"
             onClick={onCreateWalkIn}

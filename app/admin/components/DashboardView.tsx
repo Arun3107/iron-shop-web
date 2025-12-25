@@ -24,12 +24,51 @@ function getOrderAmount(order: Order): number {
 }
 
 function getOrderDate(order: Order): Date | null {
-  const raw = (order as unknown as { created_at?: string | null }).created_at;
+  // Backward-compatible helper used in a few places
+  return parseOrderDateField(order, "created_at");
+}
+
+
+function parseOrderDateField(
+  order: Order,
+  field: "created_at" | "picked_at" | "ready_at" | "delivered_at",
+): Date | null {
+  const raw = (order as unknown as Record<string, unknown>)[field] as
+    | string
+    | null
+    | undefined;
+
   if (!raw) return null;
   const d = new Date(raw);
   if (Number.isNaN(d.getTime())) return null;
   return d;
 }
+
+function getTodayRevenueDate(order: Order): Date | null {
+  // Today Revenue = READY + DELIVERED orders "worked today"
+  if (order.status === "READY") {
+    return (
+      parseOrderDateField(order, "ready_at") ??
+      parseOrderDateField(order, "created_at")
+    );
+  }
+  if (order.status === "DELIVERED") {
+    return (
+      parseOrderDateField(order, "delivered_at") ??
+      parseOrderDateField(order, "created_at")
+    );
+  }
+  return null;
+}
+
+function getDeliveredRevenueDate(order: Order): Date | null {
+  // Month/Lifetime Delivered should use delivered_at (fallback to created_at for older rows)
+  return (
+    parseOrderDateField(order, "delivered_at") ??
+    parseOrderDateField(order, "created_at")
+  );
+}
+
 
 function formatDateDDMMMYYYY(d: Date): string {
   const day = d.getDate().toString().padStart(2, "0");
@@ -75,7 +114,11 @@ export default function DashboardView({ orders, loading }: DashboardViewProps) {
   let lifetimeRevenue = 0; // Delivered only (all time)
 
   orders.forEach((order) => {
-    const d = getOrderDate(order);
+        const d =
+      order.status === "READY" || order.status === "DELIVERED"
+        ? getTodayRevenueDate(order)
+        : null;
+
     if (!d) return;
     const ts = d.getTime();
     const amt = getOrderAmount(order);
@@ -90,14 +133,19 @@ export default function DashboardView({ orders, loading }: DashboardViewProps) {
       todayRevenue += amt;
     }
 
-    // Month & Lifetime: Delivered only
+        // Month & Lifetime: Delivered only (use delivered_at date)
     if (status === "DELIVERED") {
+      const dd = getDeliveredRevenueDate(order);
+      if (!dd) return;
+      const dts = dd.getTime();
+
       lifetimeRevenue += amt;
 
-      if (ts >= startOfMonth.getTime() && ts < endOfMonth.getTime()) {
+      if (dts >= startOfMonth.getTime() && dts < endOfMonth.getTime()) {
         monthRevenue += amt;
       }
     }
+
   });
 
   // Top 3 customers by lifetime revenue (grouped by address)

@@ -19,7 +19,9 @@ export default function AdminPage() {
   const [societyFilter, setSocietyFilter] = useState<string>("ALL");
   const [activeTab, setActiveTab] = useState<AdminTab>("ORDERS");
   const [savingMap, setSavingMap] = useState<Record<string, boolean>>({});
-  const [isMobile, setIsMobile] = useState(false);
+  // Use the mobile layout for all screen sizes (keeps UI consistent)
+const isMobile = true;
+
 
   // Walk-in order state
   const [newCustomerName, setNewCustomerName] = useState("");
@@ -32,17 +34,6 @@ export default function AdminPage() {
   useEffect(() => {
     const todayISO = new Date().toISOString().slice(0, 10);
     setDate(todayISO);
-  }, []);
-
-  // Detect mobile width
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const update = () => {
-      setIsMobile(window.innerWidth < 1024);
-    };
-    update();
-    window.addEventListener("resize", update);
-    return () => window.removeEventListener("resize", update);
   }, []);
 
   // Load all orders once on mount
@@ -153,10 +144,39 @@ export default function AdminPage() {
   }
 
   async function handlePickupConfirm(id: string) {
-    const match = orders.find((o) => o.id === id);
-    if (!match || match.status !== "NEW") return;
-    handleStatusChange(id, "PICKED");
-  }
+  const match = orders.find((o) => o.id === id);
+  if (!match || match.status !== "NEW") return;
+
+  // If customer already added items during booking, base_amount is already known.
+  // When we confirm pickup, auto-set total_price (so billing is not blank).
+  const inferredTotal =
+    typeof match.total_price === "number" && match.total_price > 0
+      ? match.total_price
+      : typeof match.base_amount === "number" && match.base_amount > 0
+      ? match.base_amount
+      : null;
+
+  setOrders((prev) =>
+    prev.map((o) =>
+      o.id === id
+        ? {
+            ...o,
+            status: "PICKED",
+            total_price:
+              inferredTotal !== null && (o.total_price == null || o.total_price === 0)
+                ? inferredTotal
+                : o.total_price,
+          }
+        : o,
+    ),
+  );
+
+  void saveOrderPartial(id, {
+    status: "PICKED",
+    ...(inferredTotal !== null ? { total_price: inferredTotal } : {}),
+  });
+}
+
 
   async function handleCreateWalkInOrder() {
     if (!date) {
@@ -179,18 +199,18 @@ export default function AdminPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          customer_name: flatNumber, // <– flat number as name
-          phone: newPhone || "",
-          society_name: newSociety,
-          flat_number: flatNumber, // <– flat number as flat_number
-          pickup_date: date,
-          pickup_slot: "Self drop",
-          express_delivery: false, // walk-ins are never express
-          self_drop: true,
-          status: "PICKED", // walk-in orders start as PICKED
-          notes: null,
-          block: newBlock || null, // <– store block on the order
-        }),
+  customer_name: flatNumber,
+  phone: newPhone || "",
+  society_name: newSociety,
+  flat_number: flatNumber,
+  pickup_date: date,
+  pickup_slot: "Self drop",
+  self_drop: true,
+  status: "PICKED",
+  notes: null,
+  block: newBlock || null,
+}),
+
       });
 
       const data = await res.json();
@@ -373,7 +393,6 @@ export default function AdminPage() {
   />
 ) : activeTab === "ORDERS" ? (
   <OrdersView
-    isMobile={isMobile}
     loading={loading}
     // Only picked orders (NEW/READY/DELIVERED are hidden here)
     sortedOrders={pickedOrders}

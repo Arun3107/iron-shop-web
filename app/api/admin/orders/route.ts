@@ -75,18 +75,18 @@ export async function POST(request: Request) {
     const body = await request.json();
 
     const {
-      customer_name,
-      phone,
-      society_name,
-      flat_number,
-      pickup_date,
-      pickup_slot,
-      express_delivery,
-      notes,
-      status,
-      self_drop,
-      block,
-    } = body;
+  customer_name,
+  phone,
+  society_name,
+  flat_number,
+  pickup_date,
+  pickup_slot,
+  notes,
+  status,
+  self_drop,
+  block,
+} = body;
+
 
     if (
       !customer_name ||
@@ -130,20 +130,20 @@ export async function POST(request: Request) {
     const { data, error: orderError } = await supabase
       .from("orders")
       .insert([
-        {
-          customer_name,
-          phone,
-          society_name,
-          flat_number,
-          pickup_date,
-          pickup_slot,
-          express_delivery: !!express_delivery,
-          notes: notes ?? null,
-          status: status ?? "NEW",
-          self_drop: !!self_drop,
-          block: block ?? null,
-        },
-      ])
+  {
+    customer_name,
+    phone,
+    society_name,
+    flat_number,
+    pickup_date,
+    pickup_slot,
+    notes: notes ?? null,
+    status: status ?? "NEW",
+    self_drop: !!self_drop,
+    block: block ?? null,
+  },
+])
+
       .select()
       .single();
 
@@ -180,11 +180,21 @@ export async function PATCH(request: Request) {
     const body = await request.json();
 
     // Bulk status update: { ids: string[], status }
-    if (Array.isArray(body.ids) && body.ids.length > 0 && body.status) {
+        if (Array.isArray(body.ids) && body.ids.length > 0 && body.status) {
+      const nowIso = new Date().toISOString();
+      const nextStatus = body.status as string;
+
+      const bulkPatch: Record<string, unknown> = { status: nextStatus };
+
+      if (nextStatus === "PICKED") bulkPatch.picked_at = nowIso;
+      if (nextStatus === "READY") bulkPatch.ready_at = nowIso;
+      if (nextStatus === "DELIVERED") bulkPatch.delivered_at = nowIso;
+
       const { error } = await supabase
         .from("orders")
-        .update({ status: body.status as string })
+        .update(bulkPatch)
         .in("id", body.ids);
+
 
       if (error) {
         console.error("Admin PATCH /api/admin/orders bulk update error:", error);
@@ -210,9 +220,15 @@ export async function PATCH(request: Request) {
 
     const patch: Record<string, unknown> = {};
 
-    if (typeof status === "string") {
+        if (typeof status === "string") {
       patch.status = status;
+
+      const nowIso = new Date().toISOString();
+      if (status === "PICKED") patch.picked_at = nowIso;
+      if (status === "READY") patch.ready_at = nowIso;
+      if (status === "DELIVERED") patch.delivered_at = nowIso;
     }
+
     if (typeof worker_name === "string" || worker_name === null) {
       patch.worker_name = worker_name;
     }

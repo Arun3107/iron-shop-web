@@ -31,6 +31,7 @@ const ITEM_GROUPS: { title: string; keys: string[] }[] = [
     title: "Women Clothing",
     keys: [
       "women_kurti_top",
+      "long_kurti_frock",
       "women_leggings_pant_salwar_shorts",
       "women_dress",
       "women_simple_saree",
@@ -67,7 +68,6 @@ const PICKUP_SLOTS: { id: PickupSlotId; label: "Morning" | "Evening" }[] = [
 
 const ADD_NEW_SOCIETY_VALUE = "__ADD_NEW_SOCIETY__";
 
-
 /**
  * Earliest pickup date:
  *  - Same-day booking allowed until 5 PM
@@ -82,6 +82,24 @@ function getEarliestPickupDateISO() {
   }
 
   return earliest.toISOString().slice(0, 10); // YYYY-MM-DD
+}
+
+function isTuesdayISO(isoDate: string) {
+  // isoDate: "YYYY-MM-DD"
+  const d = new Date(isoDate + "T00:00:00");
+  return d.getDay() === 2; // 0=Sun, 1=Mon, 2=Tue
+}
+
+function addDaysISO(isoDate: string, days: number) {
+  const d = new Date(isoDate + "T00:00:00");
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+/** If date is Tuesday, move to next day (Wednesday). */
+function bumpIfTuesdayISO(isoDate: string) {
+  if (!isoDate) return isoDate;
+  return isTuesdayISO(isoDate) ? addDaysISO(isoDate, 1) : isoDate;
 }
 
 const labelStyle: CSSProperties = {
@@ -110,7 +128,7 @@ export default function BookingForm(props: {
   onBack: () => void;
   onConfirm: (message: string) => void;
 }) {
-  const earliestPickupDate = getEarliestPickupDateISO();
+  const earliestPickupDate = bumpIfTuesdayISO(getEarliestPickupDateISO());
 
   const [customerName, setCustomerName] = useState("");
   const [phone, setPhone] = useState("");
@@ -133,7 +151,7 @@ export default function BookingForm(props: {
     hour: 0,
   });
 
-    // Societies from Supabase
+  // Societies from Supabase
   const [societyOptions, setSocietyOptions] = useState<string[]>([]);
   const [societiesLoading, setSocietiesLoading] = useState(false);
   const [societiesError, setSocietiesError] = useState<string | null>(null);
@@ -150,11 +168,10 @@ export default function BookingForm(props: {
 
   const effectiveSocietyOptions = societyOptions;
 
-
   const [message, setMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-    // Capture "today" + hour for same-day + morning-disable logic
+  // Capture "today" + hour for same-day + morning-disable logic
   useEffect(() => {
     const now = new Date();
     setCurrentInfo({
@@ -162,7 +179,6 @@ export default function BookingForm(props: {
       hour: now.getHours(),
     });
   }, []);
-
 
   // Load saved details from localStorage
   useEffect(() => {
@@ -183,7 +199,7 @@ export default function BookingForm(props: {
     }
   }, []);
 
-    // Load societies from /api/societies on mount (same as WalkInView)
+  // Load societies from /api/societies on mount (same as WalkInView)
   useEffect(() => {
     let cancelled = false;
 
@@ -200,7 +216,7 @@ export default function BookingForm(props: {
         const json = await res.json();
         // API shape: { societies: [{ name: string }, ...] }
         const list = (json?.societies ?? []).map(
-          (s: { name: string }) => s.name,
+          (s: { name: string }) => s.name
         ) as string[];
 
         if (cancelled) return;
@@ -224,7 +240,7 @@ export default function BookingForm(props: {
         console.error("Error loading societies", err);
         if (!cancelled) {
           setSocietiesError(
-            "Could not load societies. You can still type manually.",
+            "Could not load societies. You can still type manually."
           );
           setSocietyOptions([]);
         }
@@ -243,26 +259,25 @@ export default function BookingForm(props: {
   }, [society, setSociety]);
 
   function handleSocietyChange(e: ChangeEvent<HTMLSelectElement>): void {
-  const value = e.target.value;
+    const value = e.target.value;
 
-  if (value === ADD_NEW_SOCIETY_VALUE) {
-    // User chose “Add new society”
-    // 1) Clear current selection so the box doesn’t still show old society
-    // 2) Open the add-society row
-    setSociety("");
-    setIsAddingSociety(true);
+    if (value === ADD_NEW_SOCIETY_VALUE) {
+      // User chose “Add new society”
+      // 1) Clear current selection so the box doesn’t still show old society
+      // 2) Open the add-society row
+      setSociety("");
+      setIsAddingSociety(true);
+      setNewSocietyNameInput("");
+      setAddSocietyError(null);
+      return;
+    }
+
+    // Normal selection
+    setSociety(value);
+    setIsAddingSociety(false);
     setNewSocietyNameInput("");
     setAddSocietyError(null);
-    return;
   }
-
-  // Normal selection
-  setSociety(value);
-  setIsAddingSociety(false);
-  setNewSocietyNameInput("");
-  setAddSocietyError(null);
-}
-
 
   async function handleAddSociety() {
     const name = newSocietyNameInput.trim();
@@ -286,7 +301,7 @@ export default function BookingForm(props: {
 
       if (!res.ok) {
         setAddSocietyError(
-          data?.error || "Could not add society. Please try again.",
+          data?.error || "Could not add society. Please try again."
         );
         return;
       }
@@ -295,8 +310,8 @@ export default function BookingForm(props: {
 
       setSocietyOptions((prev) =>
         Array.from(new Set([...prev, createdName])).sort((a, b) =>
-          a.localeCompare(b),
-        ),
+          a.localeCompare(b)
+        )
       );
       setSociety(createdName);
       setIsAddingSociety(false);
@@ -315,7 +330,6 @@ export default function BookingForm(props: {
     setNewSocietyNameInput("");
     setAddSocietyError(null);
   }
-
 
   const saveUserInfo = () => {
     if (typeof window === "undefined") return;
@@ -343,39 +357,37 @@ export default function BookingForm(props: {
   }, [morningDisabled, pickupSlotId]);
 
   const handleLoadProfile = async (rawPhone?: string) => {
-  const phoneToLoad = (rawPhone ?? phone).trim();
-  if (!phoneToLoad) return;
+    const phoneToLoad = (rawPhone ?? phone).trim();
+    if (!phoneToLoad) return;
 
-  setLoadingProfile(true);
-  try {
-    const res = await fetch(
-      `/api/customer?phone=${encodeURIComponent(phoneToLoad)}`,
-    );
-    const data = await res.json();
+    setLoadingProfile(true);
+    try {
+      const res = await fetch(
+        `/api/customer?phone=${encodeURIComponent(phoneToLoad)}`
+      );
+      const data = await res.json();
 
-    if (!res.ok) {
-      console.error("Could not load saved details:", data);
-      return;
+      if (!res.ok) {
+        console.error("Could not load saved details:", data);
+        return;
+      }
+
+      const c = data.customer;
+      if (!c) {
+        // No saved details for this number — silent, no message
+        return;
+      }
+
+      if (c.customer_name) setCustomerName(c.customer_name);
+      if (c.society_name) setSociety(c.society_name);
+      setBlock(c.block ?? ""); // 👈 always override, blank if null/undefined
+      if (c.flat_number) setFlatNumber(c.flat_number);
+    } catch (err) {
+      console.error("Load profile error:", err);
+    } finally {
+      setLoadingProfile(false);
     }
-
-    const c = data.customer;
-    if (!c) {
-      // No saved details for this number — silent, no message
-      return;
-    }
-
-    if (c.customer_name) setCustomerName(c.customer_name);
-if (c.society_name) setSociety(c.society_name);
-setBlock(c.block ?? ""); // 👈 always override, blank if null/undefined
-if (c.flat_number) setFlatNumber(c.flat_number);
-
-  } catch (err) {
-    console.error("Load profile error:", err);
-  } finally {
-    setLoadingProfile(false);
-  }
-};
-
+  };
 
   // --- Items helpers (numeric totals) ---
 
@@ -386,13 +398,10 @@ if (c.flat_number) setFlatNumber(c.flat_number);
       if (!def) return sum;
       return sum + qty * def.price;
     },
-    0,
+    0
   );
-  const estimatedTotal = itemsTotal || null;
 
-  const hasItems = Object.values(itemsQuantities).some(
-    (qty) => qty && qty > 0,
-  );
+  const hasItems = Object.values(itemsQuantities).some((qty) => qty && qty > 0);
 
   // --- Items modal handlers ---
 
@@ -451,7 +460,13 @@ if (c.flat_number) setFlatNumber(c.flat_number);
       return;
     }
 
-        // Build items_json for backend (same structure admin expects)
+    // 🚫 Block Tuesdays (final safety check)
+    if (isTuesdayISO(pickupDate)) {
+      setMessage("We are closed on Tuesdays. Please select another date.");
+      return;
+    }
+
+    // Build items_json for backend (same structure admin expects)
     const itemsJson: Record<string, number> = {};
     for (const [key, qty] of Object.entries(itemsQuantities)) {
       if (qty && qty > 0) {
@@ -463,38 +478,29 @@ if (c.flat_number) setFlatNumber(c.flat_number);
     const cleanedFlat = flatNumber.trim();
     const cleanedBlock = block.trim();
 
-
     setIsSubmitting(true);
 
     try {
-            const res = await fetch("/api/orders", {
+      const res = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           customer_name: customerName.trim(),
           phone: phone.trim(),
           society_name: finalSociety,
-          flat_number: cleanedFlat,                // 👈 only flat here
-          block: cleanedBlock || null,             // 👈 separate block column
+          flat_number: cleanedFlat, // 👈 only flat here
+          block: cleanedBlock || null, // 👈 separate block column
           pickup_date: pickupDate,
           // Store only "Morning" / "Evening" in DB
           pickup_slot: selectedSlot.label,
-          express_delivery: false,
-          self_drop: false,
-
-          // Items + amounts
+          // Items + amounts (only what we actually use)
           items_json: Object.keys(itemsJson).length ? itemsJson : null,
-          items_estimated_total: itemsTotal || null,
-          base_amount: itemsTotal || null,         // 👈 fills base_amount column
-          delivery_charge: null,
-          express_charge: null,
-          estimated_total: estimatedTotal,         // you can also set = itemsTotal if you prefer
+          base_amount: itemsTotal || null, // base amount calculated from selected items
 
           // Notes only
           notes: notes.trim() || null,
         }),
       });
-
 
       const data = await res.json();
 
@@ -583,35 +589,34 @@ if (c.flat_number) setFlatNumber(c.flat_number);
           <div>
             <label style={labelStyle}>Mobile Number</label>
             <input
-  type="tel"
-  value={phone}
-  onChange={(e) => {
-    const next = e.target.value;
-    setPhone(next);
+              type="tel"
+              value={phone}
+              onChange={(e) => {
+                const next = e.target.value;
+                setPhone(next);
 
-    const trimmed = next.trim();
-    // Auto-load saved details when a full number is entered (10+ digits)
-    if (trimmed.length >= 10) {
-      void handleLoadProfile(trimmed);
-    }
-  }}
-  style={inputStyle}
-/>
-{loadingProfile && (
-  <div
-    style={{
-      marginTop: 6,
-      fontSize: 11,
-      color: "#6b7280",
-    }}
-  >
-    Loading saved details…
-  </div>
-)}
-
+                const trimmed = next.trim();
+                // Auto-load saved details when a full number is entered (10+ digits)
+                if (trimmed.length >= 10) {
+                  void handleLoadProfile(trimmed);
+                }
+              }}
+              style={inputStyle}
+            />
+            {loadingProfile && (
+              <div
+                style={{
+                  marginTop: 6,
+                  fontSize: 11,
+                  color: "#6b7280",
+                }}
+              >
+                Loading saved details…
+              </div>
+            )}
           </div>
 
-                    {/* Society */}
+          {/* Society */}
           <div>
             <label style={labelStyle}>Society / Apartment</label>
 
@@ -628,19 +633,18 @@ if (c.flat_number) setFlatNumber(c.flat_number);
               </div>
             ) : (
               <select
-  value={isAddingSociety ? "" : society}
-  onChange={handleSocietyChange}
-  style={inputStyle}
->
-  <option value="">Select society</option>
-  {effectiveSocietyOptions.map((s) => (
-    <option key={s} value={s}>
-      {s}
-    </option>
-  ))}
-  <option value={ADD_NEW_SOCIETY_VALUE}>+ Add new society</option>
-</select>
-
+                value={isAddingSociety ? "" : society}
+                onChange={handleSocietyChange}
+                style={inputStyle}
+              >
+                <option value="">Select society</option>
+                {effectiveSocietyOptions.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+                <option value={ADD_NEW_SOCIETY_VALUE}>+ Add new society</option>
+              </select>
             )}
 
             {societiesError && (
@@ -725,8 +729,7 @@ if (c.flat_number) setFlatNumber(c.flat_number);
             )}
           </div>
 
-
-                    {/* Block */}
+          {/* Block */}
           <div>
             <label style={labelStyle}>Block (optional)</label>
             {isPSRAster ? (
@@ -765,7 +768,6 @@ if (c.flat_number) setFlatNumber(c.flat_number);
             )}
           </div>
 
-
           {/* Flat */}
           <div>
             <label style={labelStyle}>Flat / House Number</label>
@@ -786,15 +788,36 @@ if (c.flat_number) setFlatNumber(c.flat_number);
             }}
           >
             <div>
-              <label style={labelStyle}>Pickup Date</label>
+              <label style={labelStyle}>Pickup Date (Tuesday Closed)</label>
               <input
                 type="date"
                 value={pickupDate}
-                onChange={(e) => setPickupDate(e.target.value)}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  const fixed = bumpIfTuesdayISO(next);
+
+                  setPickupDate(fixed);
+
+                  if (next && isTuesdayISO(next)) {
+                    setMessage(
+                      "We are closed on Tuesdays. Please select another date."
+                    );
+                  } else {
+                    // Clear only if the message was about Tuesday (avoid wiping other errors)
+                    setMessage((prev) =>
+                      prev ===
+                      "We are closed on Tuesdays. Please select another date."
+                        ? ""
+                        : prev
+                    );
+                  }
+                }}
                 min={earliestPickupDate}
                 style={inputStyle}
               />
             </div>
+
+            
             <div>
               <label style={labelStyle}>Pickup Time</label>
               <div
@@ -1022,7 +1045,7 @@ function BookingItemsModal(props: {
         padding: 12,
       }}
     >
-            <div
+      <div
         style={{
           width: "100%",
           maxWidth: 520,
@@ -1037,7 +1060,6 @@ function BookingItemsModal(props: {
           color: "#000000",
         }}
       >
-
         {/* Header */}
         <div
           style={{
@@ -1053,7 +1075,6 @@ function BookingItemsModal(props: {
             <div style={{ fontSize: 12, color: "#000000" }}>
               Select what you are sending. This helps estimate the bill.
             </div>
-
           </div>
           <button
             type="button"
@@ -1125,13 +1146,11 @@ function BookingItemsModal(props: {
                     const def = ITEM_PRICES_MAP[key];
                     if (!def) return null;
 
-                    const { raw} = getValuePair(key);
+                    const { raw } = getValuePair(key);
 
                     // special label change to match admin
-                    const label =
-                      key === "women_kurti_top"
-                        ? "Kurti / Top / Dupatta"
-                        : def.label;
+                    const label = def.label;
+
 
                     return (
                       <div
@@ -1145,11 +1164,10 @@ function BookingItemsModal(props: {
                       >
                         <span>
                           {label}
-                            <span style={{ color: "#000000" }}>
+                          <span style={{ color: "#000000" }}>
                             {" "}
                             — ₹{def.price}
                           </span>
-
                         </span>
                         <div
                           style={{
@@ -1251,8 +1269,7 @@ function BookingItemsModal(props: {
               padding: "6px 14px",
               fontSize: 12,
               fontWeight: 600,
-              background:
-                "linear-gradient(to right, #4ade80, #22c55e)",
+              background: "linear-gradient(to right, #4ade80, #22c55e)",
               color: "#064e3b",
               cursor: "pointer",
             }}

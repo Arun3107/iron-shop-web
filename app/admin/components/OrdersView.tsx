@@ -4,13 +4,33 @@
 import { useState, type ChangeEvent } from "react";
 import type { Order, OrderStatus } from "../types";
 import { DISCOUNT_OPTIONS, ITEM_PRICES } from "../constants";
-import { thStyle, tdStyle } from "../styles";
+// (removed) table styles no longer needed
+
 
 type ItemPriceDef = { label: string; price: number };
 
 // Helper map so TS is happy when we index by string keys
 const ITEM_PRICES_MAP: Record<string, ItemPriceDef> =
   ITEM_PRICES as unknown as Record<string, ItemPriceDef>;
+
+// --- Single source of truth for item labels/prices across desktop + mobile ---
+const ITEM_OVERRIDES: Record<string, Partial<ItemPriceDef>> = {
+  // change Kurti / Top / Dupatta — ₹10 to Blouse / Top / Dupatta — ₹10
+  women_kurti_top: { label: "Blouse / Top / Dupatta", price: 10 },
+
+  // change Long Kurti / Frock — ₹16 to Kurti / Frock — ₹15
+  long_kurti_frock: { label: "Kurti / Frock", price: 15 },
+};
+
+function getItemDef(key: string): ItemPriceDef | null {
+  const base = ITEM_PRICES_MAP[key];
+  if (!base) return null;
+  const ov = ITEM_OVERRIDES[key];
+  return {
+    label: ov?.label ?? base.label,
+    price: ov?.price ?? base.price,
+  };
+}
 
 // Grouping + ordering of items for the UI
 const ITEM_GROUPS: { title: string; keys: string[] }[] = [
@@ -53,7 +73,6 @@ type BillingState = Record<string, { base: string; discount: number }>;
 type ItemState = Record<string, Record<string, string>>;
 
 interface Props {
-  isMobile: boolean;
   loading: boolean;
   sortedOrders: Order[];
   savingMap: Record<string, boolean>;
@@ -66,16 +85,13 @@ interface Props {
   ) => void;
 }
 
-
 export default function OrdersView({
-  isMobile,
   loading,
   sortedOrders,
   savingMap,
   onStatusChange,
   onTotalUpdate,
 }: Props) {
-
   // Local overrides for base amount & discount
   const [billingState, setBillingState] = useState<BillingState>({});
   // Local overrides for items quantities (string for easy input)
@@ -88,16 +104,23 @@ export default function OrdersView({
   // --- Helpers to combine DB + local state ---
 
   const getUiBilling = (order: Order): { base: string; discount: number } => {
-    const local = billingState[order.id];
-    const baseFromDb =
-      typeof order.base_amount === "number" && order.base_amount > 0
-        ? String(order.base_amount)
-        : "";
-    return {
-      base: local?.base ?? baseFromDb,
-      discount: local?.discount ?? 10,
-    };
+  const local = billingState[order.id];
+
+  const baseFromDb =
+    typeof order.base_amount === "number" && order.base_amount > 0
+      ? String(order.base_amount)
+      : "";
+
+  // IMPORTANT: don't let empty-string local base override DB base
+  const localBase =
+    typeof local?.base === "string" ? local.base.trim() : "";
+
+  return {
+    base: localBase !== "" ? localBase : baseFromDb,
+    discount: typeof local?.discount === "number" ? local.discount : 0,
   };
+};
+
 
   const getItemsForUi = (order: Order): Record<string, string> => {
     const local = itemState[order.id];
@@ -153,8 +176,7 @@ export default function OrdersView({
     const merged = getMergedItems(order, state);
     let sum = 0;
     for (const [key, qty] of Object.entries(merged)) {
-      const def = ITEM_PRICES_MAP[key];
-
+      const def = getItemDef(key);
       if (!def) continue;
       sum += qty * def.price;
     }
@@ -170,60 +192,56 @@ export default function OrdersView({
   };
 
   const computeTotals = (
-  order: Order,
-  overrideBase?: string,
-  overrideDiscount?: number,
-  overrideItemsState?: ItemState,
-  ignoreExistingBase = false
-): {
-  baseAmount: number | null;
-  finalTotal: number | null;
-  itemsCounts: Record<string, number> | null;
-} => {
-  const uiBilling = getUiBilling(order);
-  const baseStr =
-    overrideBase !== undefined ? overrideBase : uiBilling.base;
-  const discountPercent =
-    overrideDiscount !== undefined
-      ? overrideDiscount
-      : uiBilling.discount;
+    order: Order,
+    overrideBase?: string,
+    overrideDiscount?: number,
+    overrideItemsState?: ItemState,
+    ignoreExistingBase = false
+  ): {
+    baseAmount: number | null;
+    finalTotal: number | null;
+    itemsCounts: Record<string, number> | null;
+  } => {
+    const uiBilling = getUiBilling(order);
+    const baseStr = overrideBase !== undefined ? overrideBase : uiBilling.base;
+    const discountPercent =
+      overrideDiscount !== undefined ? overrideDiscount : uiBilling.discount;
 
-  const itemsStateToUse = overrideItemsState ?? itemState;
-  const itemTotal = getItemTotal(order, itemsStateToUse);
-  const itemsCounts = buildItemsCounts(order, itemsStateToUse);
+    const itemsStateToUse = overrideItemsState ?? itemState;
+    const itemTotal = getItemTotal(order, itemsStateToUse);
+    const itemsCounts = buildItemsCounts(order, itemsStateToUse);
 
-  let baseAmount = 0;
+    let baseAmount = 0;
 
-  // 1) If we have items, always use them as base
-  if (itemTotal > 0) {
-    baseAmount = itemTotal;
-  } else if (!ignoreExistingBase) {
-    // 2) Only fall back to base input / DB base
-    //    when we are NOT in an "items changed" calculation.
-    if (baseStr) {
-      const parsed = parseInt(baseStr, 10);
-      if (parsed > 0) baseAmount = parsed;
-    } else if (
-      typeof order.base_amount === "number" &&
-      order.base_amount > 0
-    ) {
-      baseAmount = order.base_amount;
+    // 1) If we have items, always use them as base
+    if (itemTotal > 0) {
+      baseAmount = itemTotal;
+    } else if (!ignoreExistingBase) {
+      // 2) Only fall back to base input / DB base
+      //    when we are NOT in an "items changed" calculation.
+      if (baseStr) {
+        const parsed = parseInt(baseStr, 10);
+        if (parsed > 0) baseAmount = parsed;
+      } else if (
+        typeof order.base_amount === "number" &&
+        order.base_amount > 0
+      ) {
+        baseAmount = order.base_amount;
+      }
     }
-  }
 
-  if (!baseAmount || baseAmount <= 0) {
-    return { baseAmount: null, finalTotal: null, itemsCounts };
-  }
+    if (!baseAmount || baseAmount <= 0) {
+      return { baseAmount: null, finalTotal: null, itemsCounts };
+    }
 
-  let total = baseAmount;
-  if (discountPercent && discountPercent > 0) {
-    const discounted =
-      baseAmount - (baseAmount * discountPercent) / 100;
-    total = Math.round(discounted);
-  }
+    let total = baseAmount;
+    if (discountPercent && discountPercent > 0) {
+      const discounted = baseAmount - (baseAmount * discountPercent) / 100;
+      total = Math.round(discounted);
+    }
 
-  return { baseAmount, finalTotal: total, itemsCounts };
-};
+    return { baseAmount, finalTotal: total, itemsCounts };
+  };
 
   // --- Handlers ---
 
@@ -232,7 +250,7 @@ export default function OrdersView({
       ...prev,
       [id]: {
         base: value,
-        discount: prev[id]?.discount ?? 10,
+        discount: prev[id]?.discount ?? 0,
       },
     }));
   };
@@ -259,31 +277,7 @@ export default function OrdersView({
     void onTotalUpdate(order.id, finalTotal, baseAmount, itemsCounts);
   };
 
-  // Desktop inline item change
-const handleItemQtyChange = (
-  order: Order,
-  key: string,
-  value: string
-) => {
-  // Build the next itemState snapshot from the current state
-  const existing = itemState[order.id] || {};
-  const nextForOrder = { ...existing, [key]: value };
-  const nextState: ItemState = { ...itemState, [order.id]: nextForOrder };
-
-  // Update local UI state
-  setItemState(nextState);
-
-  // Recompute totals using the same snapshot and push up to parent
-    const { baseAmount, finalTotal, itemsCounts } = computeTotals(
-    order,
-    undefined,
-    undefined,
-    nextState,
-    true // ignoreExistingBase when items change
-  );
-
-  void onTotalUpdate(order.id, finalTotal, baseAmount, itemsCounts);
-};
+  // (removed) handleItemQtyChange was only used by the old desktop/table UI
 
 
   // Modal open/close for mobile
@@ -303,28 +297,27 @@ const handleItemQtyChange = (
   };
 
   const handleModalSave = (order: Order) => {
-  const nextState: ItemState = {
-    ...itemState,
-    [order.id]: { ...modalItems },
-  };
+    const nextState: ItemState = {
+      ...itemState,
+      [order.id]: { ...modalItems },
+    };
 
-  // Update local UI state
-  setItemState(nextState);
+    // Update local UI state
+    setItemState(nextState);
 
-  // Recompute totals and inform parent
+    // Recompute totals and inform parent
     const { baseAmount, finalTotal, itemsCounts } = computeTotals(
-    order,
-    undefined,
-    undefined,
-    nextState,
-    true // ignoreExistingBase when items change via modal
-  );
+      order,
+      undefined,
+      undefined,
+      nextState,
+      true // ignoreExistingBase when items change via modal
+    );
 
-  void onTotalUpdate(order.id, finalTotal, baseAmount, itemsCounts);
+    void onTotalUpdate(order.id, finalTotal, baseAmount, itemsCounts);
 
-  closeItemsModal();
-};
-
+    closeItemsModal();
+  };
 
   // --- UI ---
 
@@ -361,240 +354,6 @@ const handleItemQtyChange = (
     </div>
   );
 
-  if (!isMobile) {
-    // Desktop table view
-    return (
-      <div
-        style={{
-          marginTop: 4,
-          borderRadius: 12,
-          border: "1px solid #1f2937",
-          overflow: "hidden",
-        }}
-      >
-        <div style={{ padding: 10, borderBottom: "1px solid #1f2937" }}>
-          {header}
-        </div>
-        <div style={{ overflowX: "auto" }}>
-          <table
-            style={{
-              width: "100%",
-              minWidth: 800,
-              borderCollapse: "collapse",
-              fontSize: 11,
-            }}
-          >
-            <thead
-              style={{
-                background: "linear-gradient(to right, #020617, #111827)",
-              }}
-            >
-              <tr>
-                <th style={thStyle}>Society / Flat</th>
-                <th style={thStyle}>Items</th>
-                <th style={thStyle}>Base & discount</th>
-                <th style={thStyle}>Total</th>
-                <th style={thStyle}>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sortedOrders.map((order, index) => {
-                const saving = savingMap[order.id] ?? false;
-                const billing = getUiBilling(order);
-                const itemsForUi = getItemsForUi(order);
-                const itemTotal = getItemTotal(order, itemState);
-                const { finalTotal } = computeTotals(order);
-                const effectiveTotal =
-                  finalTotal ?? order.total_price ?? null;
-
-                return (
-                  <tr
-                    key={order.id}
-                    style={{
-                      backgroundColor:
-                        index % 2 === 0 ? "#020617" : "#030712",
-                    }}
-                  >
-                    <td style={tdStyle}>
-  <div style={{ fontSize: 12, fontWeight: 600 }}>
-    {order.society_name}
-  </div>
-  <div style={{ fontSize: 11, color: "#9ca3af" }}>
-    {`Flat: ${order.flat_number}${
-      order.block ? `, ${order.block} Block` : ""
-    }`}
-  </div>
-  <div style={{ fontSize: 11, color: "#9ca3af" }}>
-    {order.self_drop
-      ? "Self drop"
-      : `Pickup: ${order.pickup_slot}`}
-    {order.express_delivery && (
-      <span
-        style={{ color: "#f97316", marginLeft: 4 }}
-      >
-        • Express
-      </span>
-    )}
-  </div>
-  {order.notes && (
-    <div
-      style={{
-        marginTop: 2,
-        fontSize: 11,
-        color: "#e5e7eb",
-      }}
-    >
-      Notes: {order.notes}
-    </div>
-  )}
-</td>
-
-
-                    <td style={tdStyle}>
-                      <ItemCalculator
-                        orderId={order.id}
-                        items={itemsForUi}
-                        onChange={(key, val) =>
-                          handleItemQtyChange(order, key, val)
-                        }
-                      />
-                      <div
-                        style={{
-                          marginTop: 6,
-                          fontSize: 11,
-                          color: "#9ca3af",
-                        }}
-                      >
-                        Items total:{" "}
-                        <span style={{ fontWeight: 600 }}>
-                          ₹{itemTotal}
-                        </span>
-                      </div>
-                    </td>
-
-                    <td style={tdStyle}>
-                      <div style={{ fontSize: 11, marginBottom: 4 }}>
-                        <div style={{ marginBottom: 4 }}>
-                          <label
-                            style={{
-                              display: "block",
-                              fontSize: 10,
-                              color: "#9ca3af",
-                              marginBottom: 2,
-                            }}
-                          >
-                            Base amount (before discount)
-                          </label>
-                          <input
-                            type="number"
-                            value={billing.base}
-                            onChange={(e) =>
-                              handleBaseChange(order.id, e.target.value)
-                            }
-                            onBlur={() => handleBaseBlur(order)}
-                            placeholder="₹0"
-                            style={{
-                              width: "100%",
-                              borderRadius: 999,
-                              border: "1px solid #374151",
-                              backgroundColor: "#020617",
-                              color: "#e5e7eb",
-                              padding: "4px 8px",
-                              fontSize: 11,
-                            }}
-                          />
-                        </div>
-                        <div>
-                          <label
-                            style={{
-                              display: "block",
-                              fontSize: 10,
-                              color: "#9ca3af",
-                              marginBottom: 2,
-                            }}
-                          >
-                            Discount %
-                          </label>
-                          <select
-                            value={billing.discount}
-                            onChange={(e) =>
-                              handleDiscountChange(
-                                order,
-                                Number(e.target.value)
-                              )
-                            }
-                            style={{
-                              width: "100%",
-                              borderRadius: 999,
-                              border: "1px solid #374151",
-                              backgroundColor: "#020617",
-                              color: "#e5e7eb",
-                              padding: "4px 8px",
-                              fontSize: 11,
-                            }}
-                          >
-                            {DISCOUNT_OPTIONS.map((d) => (
-                              <option key={d} value={d}>
-                                {d}%
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-                    </td>
-
-                    <td style={tdStyle}>
-                      <div style={{ fontSize: 11 }}>
-                        <div
-                          style={{
-                            fontSize: 11,
-                            color: "#9ca3af",
-                            marginBottom: 2,
-                          }}
-                        >
-                          Final total
-                        </div>
-                        <div style={{ fontSize: 13, fontWeight: 700 }}>
-                          {effectiveTotal === null
-                            ? "—"
-                            : `₹${effectiveTotal}`}
-                        </div>
-                      </div>
-                    </td>
-
-                    <td style={tdStyle}>
-                      <button
-                        type="button"
-                        disabled={saving}
-                        onClick={() =>
-                          onStatusChange(order.id, "READY")
-                        }
-                        style={{
-                          borderRadius: 999,
-                          border: "none",
-                          padding: "6px 10px",
-                          fontSize: 11,
-                          fontWeight: 600,
-                          cursor: saving ? "not-allowed" : "pointer",
-                          background:
-                            "linear-gradient(to right, #3b82f6, #2563eb)",
-                          color: "#eff6ff",
-                          opacity: saving ? 0.6 : 1,
-                        }}
-                      >
-                        Mark READY
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    );
-  }
-
   // Mobile / tablet cards + full-screen items modal
   const modalOrder = modalOrderId
     ? sortedOrders.find((o) => o.id === modalOrderId) || null
@@ -608,8 +367,7 @@ const handleItemQtyChange = (
           const billing = getUiBilling(order);
           const itemTotal = getItemTotal(order, itemState);
           const { finalTotal } = computeTotals(order);
-          const effectiveTotal =
-            finalTotal ?? order.total_price ?? null;
+          const effectiveTotal = finalTotal ?? order.total_price ?? null;
           const saving = savingMap[order.id] ?? false;
 
           return (
@@ -622,9 +380,7 @@ const handleItemQtyChange = (
               saving={saving}
               onBaseChange={(val) => handleBaseChange(order.id, val)}
               onBaseBlur={() => handleBaseBlur(order)}
-              onDiscountChange={(val) =>
-                handleDiscountChange(order, val)
-              }
+              onDiscountChange={(val) => handleDiscountChange(order, val)}
               onOpenItems={() => openItemsModal(order)}
               onReady={() => onStatusChange(order.id, "READY")}
             />
@@ -676,8 +432,7 @@ function OrderCard(props: {
         borderRadius: 14,
         border: "1px solid #374151", // slightly lighter border
         padding: 12,
-        background:
-          "radial-gradient(circle at top left, #111827, #020617)", // lighter than page
+        background: "radial-gradient(circle at top left, #111827, #020617)", // lighter than page
         boxShadow: "0 10px 25px rgba(0,0,0,0.6)", // subtle lift
         fontSize: 12,
       }}
@@ -691,34 +446,32 @@ function OrderCard(props: {
         }}
       >
         <div>
-  <div style={{ fontSize: 13, fontWeight: 600 }}>
-    {order.society_name}
-  </div>
-  <div style={{ fontSize: 11, color: "#9ca3af" }}>
-    {`Flat: ${order.flat_number}${
-      order.block ? `, ${order.block} Block` : ""
-    }`}
-  </div>
-  <div style={{ fontSize: 11, color: "#9ca3af" }}>
-    {order.self_drop ? "Self drop" : `Pickup: ${order.pickup_slot}`}
-    {order.express_delivery && (
-      <span style={{ color: "#f97316", marginLeft: 4 }}>
-        • Express
-      </span>
-    )}
-  </div>
-  {order.notes && (
-    <div
-      style={{
-        marginTop: 2,
-        fontSize: 11,
-        color: "#e5e7eb",
-      }}
-    >
-      Notes: {order.notes}
-    </div>
-  )}
-</div>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>
+            {order.society_name}
+          </div>
+          <div style={{ fontSize: 11, color: "#9ca3af" }}>
+            {`Flat: ${order.flat_number}${
+              order.block ? `, ${order.block} Block` : ""
+            }`}
+          </div>
+          <div style={{ fontSize: 11, color: "#9ca3af" }}>
+            {order.self_drop ? "Self drop" : `Pickup: ${order.pickup_slot}`}
+            {order.express_delivery && (
+              <span style={{ color: "#f97316", marginLeft: 4 }}>• Express</span>
+            )}
+          </div>
+          {order.notes && (
+            <div
+              style={{
+                marginTop: 2,
+                fontSize: 11,
+                color: "#e5e7eb",
+              }}
+            >
+              Notes: {order.notes}
+            </div>
+          )}
+        </div>
 
         <div
           style={{
@@ -821,8 +574,7 @@ function OrderCard(props: {
               marginBottom: 2,
             }}
           >
-            Items total:{" "}
-            <span style={{ fontWeight: 600 }}>₹{itemTotal}</span>
+            Items total: <span style={{ fontWeight: 600 }}>₹{itemTotal}</span>
           </div>
           <button
             type="button"
@@ -1029,7 +781,7 @@ function ItemsModal(props: {
                   }}
                 >
                   {group.keys.map((key) => {
-                    const def = ITEM_PRICES_MAP[key];
+                    const def = getItemDef(key);
                     if (!def) return null;
 
                     const { raw, num } = getValuePair(key);
@@ -1044,11 +796,7 @@ function ItemsModal(props: {
                       onChange(key, String(next));
                     };
 
-                    // special label change
-                    const label =
-                      key === "women_kurti_top"
-                        ? "Kurti / Top / Dupatta"
-                        : def.label;
+                    const label = def.label;
 
                     return (
                       <div
@@ -1167,8 +915,7 @@ function ItemsModal(props: {
               padding: "6px 14px",
               fontSize: 12,
               fontWeight: 600,
-              background:
-                "linear-gradient(to right, #4ade80, #22c55e)",
+              background: "linear-gradient(to right, #4ade80, #22c55e)",
               color: "#022c22",
               cursor: "pointer",
             }}
@@ -1181,156 +928,3 @@ function ItemsModal(props: {
   );
 }
 
-
-function ItemCalculator(props: {
-  orderId: string;
-  items: Record<string, string>;
-  onChange: (key: string, value: string) => void;
-}) {
-  const { items, onChange } = props;
-
-  const handleTypedChange =
-    (key: string) => (e: ChangeEvent<HTMLInputElement>) => {
-      const v = e.target.value;
-      if (v === "") {
-        onChange(key, "");
-        return;
-      }
-      if (/^\d+$/.test(v)) {
-        onChange(key, v);
-      }
-    };
-
-  const getValuePair = (key: string) => {
-    const raw = items[key] ?? "";
-    const num =
-      raw === "" ? 0 : Number.isNaN(parseInt(raw, 10)) ? 0 : parseInt(raw, 10);
-    return { raw, num };
-  };
-
-  return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "1fr",
-        gap: 8,
-      }}
-    >
-      {ITEM_GROUPS.map((group) => (
-        <div key={group.title}>
-          <div
-            style={{
-              fontSize: 12,
-              fontWeight: 600,
-              marginBottom: 4,
-              color: "#e5e7eb",
-            }}
-          >
-            {group.title}
-          </div>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr",
-              gap: 6,
-            }}
-          >
-            {group.keys.map((key) => {
-              const def = ITEM_PRICES_MAP[key];
-
-              if (!def) return null;
-
-              const { raw, num } = getValuePair(key);
-
-              const decrement = () => {
-                const next = Math.max(0, num - 1);
-                onChange(key, next === 0 ? "" : String(next));
-              };
-
-              const increment = () => {
-                const next = num + 1;
-                onChange(key, String(next));
-              };
-
-              return (
-                <div
-                  key={key}
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    gap: 8,
-                    fontSize: 11,
-                  }}
-                >
-                  <span>
-                    {def.label}
-                    <span style={{ color: "#9ca3af" }}> — ₹{def.price}</span>
-                  </span>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 4,
-                    }}
-                  >
-                    <button
-                      type="button"
-                      onClick={decrement}
-                      style={{
-                        width: 24,
-                        height: 24,
-                        borderRadius: 999,
-                        border: "1px solid #374151",
-                        backgroundColor: "#020617",
-                        color: "#e5e7eb",
-                        fontSize: 14,
-                        lineHeight: 1,
-                        cursor: "pointer",
-                      }}
-                    >
-                      -
-                    </button>
-                    <input
-                      type="text"
-                      value={raw}
-                      onChange={handleTypedChange(key)}
-                      inputMode="numeric"
-                      style={{
-                        width: 44,
-                        borderRadius: 999,
-                        border: "1px solid #374151",
-                        backgroundColor: "#020617",
-                        color: "#e5e7eb",
-                        padding: "2px 4px",
-                        fontSize: 12,
-                        textAlign: "center",
-                      }}
-                    />
-                    <button
-                      type="button"
-                      onClick={increment}
-                      style={{
-                        width: 24,
-                        height: 24,
-                        borderRadius: 999,
-                        border: "1px solid #374151",
-                        backgroundColor: "#020617",
-                        color: "#e5e7eb",
-                        fontSize: 14,
-                        lineHeight: 1,
-                        cursor: "pointer",
-                      }}
-                    >
-                      +
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}

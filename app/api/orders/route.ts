@@ -32,23 +32,19 @@ export async function POST(request: Request) {
         const body = await request.json();
 
     const {
-      customer_name,
-      phone,
-      society_name,
-      flat_number,
-      pickup_date,
-      pickup_slot,
-      express_delivery,
-      notes,
-      items_estimated_total,
-      delivery_charge,
-      express_charge,
-      estimated_total,
-      self_drop,
-      items_json,
-      base_amount,
-      block,
-    } = body;
+  customer_name,
+  phone,
+  society_name,
+  flat_number,
+  pickup_date,
+  pickup_slot,
+  notes,
+  self_drop,
+  items_json,
+  base_amount,
+  block,
+} = body;
+
 
 
     // Basic validation
@@ -77,15 +73,12 @@ const { data: order, error: orderError } = await (supabase as any)
       flat_number,
       pickup_date,
       pickup_slot,
-      express_delivery: !!express_delivery,
+      
       self_drop: !!self_drop,
       notes: notes || null,
 
       // money + items
-      items_estimated_total: items_estimated_total ?? null,
-      delivery_charge: delivery_charge ?? null,
-      express_charge: express_charge ?? null,
-      estimated_total: estimated_total ?? null,
+      
       base_amount: base_amount ?? null,
       items_json: items_json ?? null,
       block: block ?? null,
