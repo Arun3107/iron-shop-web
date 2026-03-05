@@ -1,4 +1,3 @@
-// app/api/admin/orders/route.ts
 import { NextResponse } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
@@ -15,9 +14,35 @@ if (supabaseUrl && supabaseServiceRole) {
   );
 }
 
+/**
+ * Status priority:
+ * Open at top: NEW → PICKED → READY → everything else
+ * Within each group: newest first
+ */
+const STATUS_PRIORITY: Record<string, number> = {
+  NEW: 0,
+  PICKED: 1,
+  READY: 2,
+};
+
+type DbOrderRow = Record<string, unknown> & {
+  status?: string | null;
+  created_at?: string | null;
+};
+
+function toDbOrderRow(v: unknown): DbOrderRow {
+  return (v ?? {}) as DbOrderRow;
+}
+
+function safeTime(v: unknown): number {
+  if (typeof v !== "string" || !v) return 0;
+  const t = new Date(v).getTime();
+  return Number.isFinite(t) ? t : 0;
+}
+
 // -------------------- GET /api/admin/orders --------------------
-// Returns all orders, optionally filtered by pickup_date (?date=YYYY-MM-DD)
-// Your admin UI currently calls: /api/admin/orders?date=ALL
+// Returns orders, optionally filtered by pickup_date (?date=YYYY-MM-DD)
+// Admin UI currently calls: /api/admin/orders?date=ALL
 export async function GET(request: Request) {
   if (!supabase) {
     return NextResponse.json(
@@ -30,17 +55,18 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const date = searchParams.get("date") || "ALL";
 
-    let query = supabase
-      .from("orders")
-      .select("*")
-      .order("created_at", { ascending: true });
+    let query = supabase.from("orders").select("*");
 
     if (date !== "ALL") {
-      // date is expected to be YYYY-MM-DD
       query = query.eq("pickup_date", date);
     }
 
-    const { data, error } = await query;
+    // ✅ IMPORTANT:
+    // With 1000+ rows, responses can get capped.
+    // So pull a recent window, then do "open-first" sort in code.
+    const { data, error } = await query
+      .order("created_at", { ascending: false })
+      .range(0, 1999);
 
     if (error) {
       console.error("Admin GET /api/admin/orders error:", error);
@@ -50,7 +76,22 @@ export async function GET(request: Request) {
       );
     }
 
-    return NextResponse.json({ orders: data ?? [] });
+    const raw = (Array.isArray(data) ? data : []) as unknown[];
+
+    const orders = raw
+      .map(toDbOrderRow)
+      .slice()
+      .sort((a, b) => {
+        const pa = STATUS_PRIORITY[a.status ?? ""] ?? 99;
+        const pb = STATUS_PRIORITY[b.status ?? ""] ?? 99;
+        if (pa !== pb) return pa - pb;
+
+        const ta = safeTime(a.created_at);
+        const tb = safeTime(b.created_at);
+        return tb - ta; // newest first within same status
+      });
+
+    return NextResponse.json({ orders });
   } catch (err) {
     console.error("Admin GET /api/admin/orders unexpected error:", err);
     return NextResponse.json(
@@ -72,21 +113,25 @@ export async function POST(request: Request) {
   }
 
   try {
-    const body = await request.json();
+    const bodyUnknown: unknown = await request.json();
+    const body = (bodyUnknown ?? {}) as Record<string, unknown>;
 
-    const {
-  customer_name,
-  phone,
-  society_name,
-  flat_number,
-  pickup_date,
-  pickup_slot,
-  notes,
-  status,
-  self_drop,
-  block,
-} = body;
+    const customer_name =
+      typeof body.customer_name === "string" ? body.customer_name : "";
+    const phone = typeof body.phone === "string" ? body.phone : "";
+    const society_name =
+      typeof body.society_name === "string" ? body.society_name : "";
+    const flat_number =
+      typeof body.flat_number === "string" ? body.flat_number : "";
+    const pickup_date =
+      typeof body.pickup_date === "string" ? body.pickup_date : "";
+    const pickup_slot =
+      typeof body.pickup_slot === "string" ? body.pickup_slot : "";
 
+    const notes = typeof body.notes === "string" ? body.notes : null;
+    const status = typeof body.status === "string" ? body.status : "NEW";
+    const self_drop = !!body.self_drop;
+    const block = typeof body.block === "string" ? body.block : null;
 
     if (
       !customer_name ||
@@ -111,15 +156,16 @@ export async function POST(request: Request) {
           phone,
           society_name,
           flat_number,
-          block: block ?? null,
+          block,
         },
-        {
-          onConflict: "phone", // uses customers_phone_key
-        }
+        { onConflict: "phone" } // customers_phone_key
       );
 
     if (customerError) {
-      console.error("Admin POST /api/admin/orders customer upsert error:", customerError);
+      console.error(
+        "Admin POST /api/admin/orders customer upsert error:",
+        customerError
+      );
       return NextResponse.json(
         { error: "Failed to upsert customer" },
         { status: 500 }
@@ -130,20 +176,19 @@ export async function POST(request: Request) {
     const { data, error: orderError } = await supabase
       .from("orders")
       .insert([
-  {
-    customer_name,
-    phone,
-    society_name,
-    flat_number,
-    pickup_date,
-    pickup_slot,
-    notes: notes ?? null,
-    status: status ?? "NEW",
-    self_drop: !!self_drop,
-    block: block ?? null,
-  },
-])
-
+        {
+          customer_name,
+          phone,
+          society_name,
+          flat_number,
+          pickup_date,
+          pickup_slot,
+          notes,
+          status,
+          self_drop,
+          block,
+        },
+      ])
       .select()
       .single();
 
@@ -166,8 +211,8 @@ export async function POST(request: Request) {
 }
 
 // -------------------- PATCH /api/admin/orders --------------------
-// - Single update: { id, status?, worker_name?, total_price?, base_amount?, items_json? }
 // - Bulk status:   { ids: string[], status }
+// - Single update: { id, status?, worker_name?, total_price?, base_amount?, items_json? }
 export async function PATCH(request: Request) {
   if (!supabase) {
     return NextResponse.json(
@@ -177,24 +222,30 @@ export async function PATCH(request: Request) {
   }
 
   try {
-    const body = await request.json();
+    const bodyUnknown: unknown = await request.json();
+    const body = (bodyUnknown ?? {}) as Record<string, unknown>;
 
-    // Bulk status update: { ids: string[], status }
-        if (Array.isArray(body.ids) && body.ids.length > 0 && body.status) {
+    const status =
+      typeof body.status === "string" ? (body.status as string) : null;
+
+    // Bulk status update
+    const ids = Array.isArray(body.ids) ? body.ids : null;
+    const idsStr =
+      ids?.filter((x) => typeof x === "string") as string[] | undefined;
+
+    if (idsStr && idsStr.length > 0 && status) {
       const nowIso = new Date().toISOString();
-      const nextStatus = body.status as string;
 
-      const bulkPatch: Record<string, unknown> = { status: nextStatus };
+      const bulkPatch: Record<string, unknown> = { status };
 
-      if (nextStatus === "PICKED") bulkPatch.picked_at = nowIso;
-      if (nextStatus === "READY") bulkPatch.ready_at = nowIso;
-      if (nextStatus === "DELIVERED") bulkPatch.delivered_at = nowIso;
+      if (status === "PICKED") bulkPatch.picked_at = nowIso;
+      if (status === "READY") bulkPatch.ready_at = nowIso;
+      if (status === "DELIVERED") bulkPatch.delivered_at = nowIso;
 
       const { error } = await supabase
         .from("orders")
         .update(bulkPatch)
-        .in("id", body.ids);
-
+        .in("id", idsStr);
 
       if (error) {
         console.error("Admin PATCH /api/admin/orders bulk update error:", error);
@@ -207,9 +258,8 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ success: true });
     }
 
-    // Single row update: { id, status?, worker_name?, total_price?, base_amount?, items_json? }
-    const { id, status, worker_name, total_price, base_amount, items_json } =
-      body ?? {};
+    // Single row update
+    const id = typeof body.id === "string" ? body.id : "";
 
     if (!id) {
       return NextResponse.json(
@@ -220,7 +270,7 @@ export async function PATCH(request: Request) {
 
     const patch: Record<string, unknown> = {};
 
-        if (typeof status === "string") {
+    if (status) {
       patch.status = status;
 
       const nowIso = new Date().toISOString();
@@ -229,18 +279,24 @@ export async function PATCH(request: Request) {
       if (status === "DELIVERED") patch.delivered_at = nowIso;
     }
 
-    if (typeof worker_name === "string" || worker_name === null) {
-      patch.worker_name = worker_name;
+    if (typeof body.worker_name === "string" || body.worker_name === null) {
+      patch.worker_name = body.worker_name;
     }
-    if (typeof total_price === "number" || total_price === null) {
-      patch.total_price = total_price;
+
+    if (typeof body.total_price === "number" || body.total_price === null) {
+      patch.total_price = body.total_price;
     }
-    if (typeof base_amount === "number" || base_amount === null) {
-      patch.base_amount = base_amount;
+
+    if (typeof body.base_amount === "number" || body.base_amount === null) {
+      patch.base_amount = body.base_amount;
     }
-    if (items_json && typeof items_json === "object") {
-      // always send an object to jsonb column
-      patch.items_json = items_json;
+
+    if (
+      typeof body.items_json === "object" &&
+      body.items_json !== null &&
+      !Array.isArray(body.items_json)
+    ) {
+      patch.items_json = body.items_json as Record<string, unknown>;
     }
 
     if (Object.keys(patch).length === 0) {
